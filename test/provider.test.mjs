@@ -198,9 +198,11 @@ test('T2.8e normalizeDescription 覆盖 YAML 标量边界', () => {
   // YAML 里注释以「空白 + #」开始：` #` 之后一律算注释（含引号内联注释的常见写法）
   assert.equal(normalizeDescription('has a comment # gone'), 'has a comment')
   assert.equal(normalizeDescription('has # inline comment'), 'has')
-  // 但 `#` 紧贴非空白字符时是值的一部分，URL 与标签不会被切坏
+  // 但 `#` 紧贴非空白字符时是值的一部分，URL 不会被切坏
   assert.equal(normalizeDescription('https://example.com/a#b'), 'https://example.com/a#b')
-  assert.equal(normalizeDescription('#tag'), '#tag')
+  // 而整个值就是注释时，YAML 得到 null，必须拒绝（否则发布一条 "#tag" 描述）
+  assert.equal(normalizeDescription('#tag'), undefined)
+  assert.equal(normalizeDescription('# a note'), undefined)
   // 引号内的一切都保留，包括看起来像注释的内容
   assert.equal(normalizeDescription('"keeps # this"'), 'keeps # this')
 })
@@ -219,7 +221,8 @@ test('T2.8f 块标量必须先剥注释再判定，且两种指示符顺序都�
   assert.equal(normalizeDescription('>not a block scalar'), undefined, '非引号 > 开头即块标量头，必须拒绝')
   assert.equal(normalizeDescription('|not a block scalar'), undefined)
   assert.equal(normalizeDescription('">- is text in quotes"'), '>- is text in quotes')
-  assert.equal(normalizeDescription('-'), '-')
+  // `-` 在同一行是块序列指示符，YAML 报错，必须拒绝
+  assert.equal(normalizeDescription('-'), undefined)
   assert.equal(normalizeDescription(''), undefined)
   assert.equal(normalizeDescription('   '), undefined)
   assert.equal(normalizeDescription('""'), undefined)
@@ -734,6 +737,164 @@ test('T2.27 引号包裹的旧驼峰键也必须被拒绝（不能形成静默�
         `${slug} 未被诊断为旧键: ${skipped.join(' | ')}`,
       )
     }
+  } finally {
+    await cleanup()
+  }
+})
+
+test('T2.28 描述可接受性必须与真实 YAML 解析器对齐（oracle 对照表）', async () => {
+  // 期望值不是猜的：用 harness 自带的 `yaml` 逐条跑过得到的。判定基准是**官方
+  // provider 的真实上下文**——它把整个 frontmatter 块交给 yaml.parse，所以
+  // `description: text with: colon` 是合法纯量。我一度按「值和键同一上下文」建模，
+  // 结果把本包自己的 description（含 "prompts: choreography"）都拒了，19 个门禁变红。
+  const oracle = [
+    // [值文本, 是否可接受]
+    ['plain text', true],
+    ['"quoted text"', true],
+    ["'single quoted'", true],
+    ['has # comment', true], // 注释被剥掉 → "has"
+    ['https://example.com/a#b', true], // `#` 紧贴非空白，是值的一部分
+    ['"keeps # this"', true], // 引号内一切保留
+    ['"a" # "b"', true], // 闭合引号优先，注释里的引号不算
+    ['text with: colon', false], // YAML: 嵌套映射 → 整块解析失败
+    ['ends with:', false],
+    ['# only comment', false], // YAML: null
+    ['#only comment', false],
+    ['-', false], // YAML: 同一行的块序列指示符 → 报错
+    ['?', false],
+    ['*alias', false], // 未定义别名 → 报错
+    ['@reserved', false], // 保留字符开头 → 报错
+    ['`reserved', false],
+    ['&anchor', false], // 只有锚点名，没有值 → null
+    ['&anchor text', true], // 锚点 + 真值 → 合法
+    ['!tag', false], // 未解析标签 → 解析出空串，等于没写描述
+    ['>-', false],
+    ['>- # note', false],
+    ['|', false],
+    ['|--', false],
+    ['|+2-', false],
+    ['|2-9', false],
+    ['>not a block', false],
+    ['', false],
+    ['   ', false],
+  ]
+  const wrong = []
+  for (const [value, acceptable] of oracle) {
+    const got = normalizeDescription(value) !== undefined
+    if (got !== acceptable) {
+      wrong.push(`${JSON.stringify(value)}: 期望 ${acceptable ? '接受' : '拒绝'}，实际 ${got ? '接受' : '拒绝'}`)
+    }
+  }
+  assert.deepEqual(wrong, [], `与真实 YAML 解析器不一致:\n${wrong.join('\n')}`)
+
+  // 关键回归：本包自己的 description 必须仍然被接受，否则技能直接消失
+  const own = await readSkillFile(SKILL_FILE)
+  assert.ok(own, '本包 SKILL.md 必须仍可解析')
+  assert.match(own.description, /choreography/)
+
+  // 与真实解析器对拍（harness 里就有 yaml 包；拿不到就跳过这一段）
+  const dshSkillDir = path.join(
+    path.dirname(process.execPath),
+    '..',
+    'lib',
+    'node_modules',
+    '@deepseek-ai',
+  )
+  let YAML
+  try {
+    const { createRequire } = await import('node:module')
+    const anchor = 'C:/Users/yaoyufeng/AppData/Roaming/npm/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-skill-filesystem/package.json'
+    YAML = createRequire(anchor)('yaml')
+  } catch {
+    YAML = undefined
+  }
+  void dshSkillDir
+  if (YAML === undefined) return
+  const disagreements = []
+  for (const [value] of oracle) {
+    // 官方上下文：整个 frontmatter 块（不含 --- 行）交给 yaml.parse
+    let parsed
+    try {
+      parsed = YAML.parse(`name: probe\ndescription: ${value}\n`)
+    } catch {
+      parsed = undefined
+    }
+    const realUsable = typeof parsed?.description === 'string' && parsed.description.trim() !== ''
+    const ours = normalizeDescription(value) !== undefined
+    // 我们只允许「比真实解析器更保守」，不允许更宽松
+    if (ours && !realUsable) disagreements.push(`${JSON.stringify(value)}: 我们接受但真实解析器得到不可用值`)
+  }
+  assert.deepEqual(disagreements, [], `比真实解析器更宽松:\n${disagreements.join('\n')}`)
+})
+
+test('T2.29 key 与冒号之间的空白不得形成静默绕过', async () => {
+  // 回归：键正则要求冒号紧贴键名，于是合法 YAML `disable-model-invocation : true`
+  // 完全不可见——作者明确声明「禁止模型自动调用」，我们却照常推销出去。
+  const { dir, cleanup } = await makeTempSkillRoot()
+  try {
+    await writeSkill(dir, 'ok', skillDoc('ok', 'O'.repeat(50)))
+    // 四种写法都是合法 YAML，都必须被读到（前三种是旧键 → 拒绝；第四种是策略）
+    await writeSkill(
+      dir,
+      'spaced-policy',
+      '---\nname: spaced-policy\ndescription: ' + 'S'.repeat(50) + '\ndisable-model-invocation : true\n---\n\nbody\n',
+    )
+    await writeSkill(
+      dir,
+      'spaced-legacy',
+      '---\nname: spaced-legacy\ndescription: ' + 'L'.repeat(50) + '\nuserInvocable : false\n---\n\nbody\n',
+    )
+    await writeSkill(
+      dir,
+      'spaced-quoted-legacy',
+      '---\nname: spaced-quoted-legacy\ndescription: ' + 'Q'.repeat(50) + '\n"userInvocable" : false\n---\n\nbody\n',
+    )
+    // 键与冒号之间有空白的普通字段也必须读到
+    await writeSkill(dir, 'spaced-name', '---\nname : spaced-name\ndescription : ' + 'N'.repeat(50) + '\n---\n\nbody\n')
+
+    const skipped = []
+    const provider = makeEmbeddedSkillsProvider({
+      roots: [dir],
+      onSkip: (f, r) => skipped.push(`${path.basename(path.dirname(f))}:${r}`),
+    })
+    const byName = new Map((await provider.list()).map((c) => [c.name, c]))
+    assert.ok(byName.has('ok'))
+    assert.ok(byName.has('spaced-name'), '键与冒号间有空白的 name/description 必须被读到')
+    assert.equal(byName.get('spaced-policy').invocation.modelInvocable, false, '空格式策略必须生效')
+    assert.ok(!byName.has('spaced-legacy'), '空格式旧键必须被拒绝')
+    assert.ok(!byName.has('spaced-quoted-legacy'), '空白 + 引号旧键必须被拒绝')
+    assert.ok(skipped.some((s) => s.startsWith('spaced-legacy:') && s.includes('unsupported')))
+    assert.ok(skipped.some((s) => s.startsWith('spaced-quoted-legacy:') && s.includes('unsupported')))
+  } finally {
+    await cleanup()
+  }
+})
+
+test('T2.30 目录返回顺序必须按码位序（用与 NTFS 顺序不同的fixture）', async () => {
+  // 回归：T2.18b 自称能抓排序缺陷，但它的 fixture（aaa/zzz）恰好与 NTFS 的
+  // readdir 顺序一致，而且它拿函数输出与「自己的排序副本」比——循环论证。
+  // 这里改用大小写混合的名字：NTFS 返回 alpha, apple, Beta, Zebra，
+  // 码位序却是 Beta, Zebra, alpha, apple，两者必然不同。
+  const { dir, cleanup } = await makeTempSkillRoot()
+  try {
+    for (const slug of ['alpha', 'apple', 'Beta', 'Zebra']) {
+      await writeSkill(dir, slug, skillDoc(slug, 'X'.repeat(50)))
+    }
+    const discovered = await discoverSkillFiles(dir)
+    const discoveredNames = discovered.map((f) => path.basename(path.dirname(f)))
+    assert.deepEqual(
+      discoveredNames,
+      [...discoveredNames].sort(compareCodePoints),
+      'discoverSkillFiles 必须按码位序返回',
+    )
+    // 这条断言只有在 fixture 顺序与码位序不同时才有鉴别力
+    const provider = makeEmbeddedSkillsProvider({ roots: [dir] })
+    const names = (await provider.list()).map((c) => c.name)
+    assert.deepEqual(names, [...names].sort(compareCodePoints), '目录必须按码位序返回')
+    assert.ok(
+      names.join(',') !== discoveredNames.join(','),
+      '本用例的前提是码位序与文件系统顺序不同，否则这条门禁没有鉴别力',
+    )
   } finally {
     await cleanup()
   }

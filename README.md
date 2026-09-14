@@ -39,7 +39,7 @@ dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director
 Append `#<tag>` to pin a revision for reproducibility:
 
 ```bash
-dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director#v1.1.2
+dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director#v1.1.3
 ```
 
 Then restart the harness so the new profile layer is composed.
@@ -49,7 +49,7 @@ Then restart the harness so the new profile layer is composed.
 Every release attaches the packed artifact, which pnpm installs directly:
 
 ```bash
-dsh plugin --profile web add https://github.com/hatsuyuki0103/dsh-fight-scene-director/releases/download/v1.1.2/dsh-fight-scene-director-1.1.2.tgz
+dsh plugin --profile web add https://github.com/hatsuyuki0103/dsh-fight-scene-director/releases/download/v1.1.3/dsh-fight-scene-director-1.1.3.tgz
 ```
 
 Use this when git-over-HTTPS is blocked on your network, or when you want a

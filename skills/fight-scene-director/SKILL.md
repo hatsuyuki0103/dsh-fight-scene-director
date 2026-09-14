@@ -1,6 +1,6 @@
 ---
 name: fight-scene-director
-description: Design executable AI-video fight-scene prompts: choreography, camera, spatial continuity, effects, and trajectory maps. Use for 打戏 / 动作导演 / 武打设计 / 分镜 / 运镜 / 轨迹图 / 站位图, and for fight, chase, duel, group battle, ranged-versus-melee, spell battle, transformation, or summon scenes across live action, 3D cartoon, 3D realistic anime, and 2D anime. Outputs structured Chinese prompts for Seedance 2.0, Seedance 2.5, and MiniMax H3.
+description: Design executable AI-video fight-scene prompts — choreography, camera, spatial continuity, effects, and trajectory maps. Use for 打戏 / 动作导演 / 武打设计 / 分镜 / 运镜 / 轨迹图 / 站位图, and for fight, chase, duel, group battle, ranged-versus-melee, spell battle, transformation, or summon scenes across live action, 3D cartoon, 3D realistic anime, and 2D anime. Outputs structured Chinese prompts for Seedance 2.0, Seedance 2.5, and MiniMax H3.
 ---
 
 # Fight Scene Director

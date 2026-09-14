@@ -4,6 +4,60 @@ All notable changes to this package are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] — 2026-09-14
+
+Fourth review round. The headline finding is uncomfortable but important: **the
+bundled skill's own frontmatter was invalid YAML.** Our lenient reader published
+it anyway, so nothing looked wrong — but the harness's official filesystem
+provider would have dropped the entire skill file.
+
+### Fixed
+
+- **`description` contained `prompts: choreography` — invalid YAML.** The
+  official provider hands the whole frontmatter block to the `yaml` parser, and
+  a colon followed by a space inside a plain scalar is a *nested mapping*, so the
+  parse throws and the provider discards the file. Measured against the real
+  parser: `name: probe\ndescription: text with: colon` →
+  `Nested mappings are not allowed in compact mappings`. The description now uses
+  an em dash instead of a colon. Gated by T1.10, which was verified to fail when
+  the colon is put back.
+- **Our reader was more permissive than YAML, in the direction that hides
+  defects.** It accepted `#tag` (real YAML: null), `-` / `?` / `*alias` /
+  `@reserved` / `` `reserved `` (real YAML: parse error), `&anchor` / `!tag`
+  (real YAML: null / empty), and `text with: colon` (real YAML: parse error).
+  Each became a published description that the real parser rejects. All are now
+  rejected so the file is skipped *with a diagnostic* instead. T2.28 carries the
+  verified accept/reject table.
+- **`key : value` spacing silently bypassed the key reader.** The pattern
+  required the colon to touch the key, so the perfectly legal
+  `disable-model-invocation : true` was invisible — the author explicitly opted
+  out of model invocation and the skill was advertised anyway, with no
+  diagnostic. This is the same unsafe direction as the quoted-key bypass closed
+  in 1.1.2; the spacing variant was missed. Gated by T2.29.
+- **T2.18b was a false gate with a false claim.** It asserted that
+  `discoverSkillFiles` returns code-point order by comparing that output against
+  a *sorted copy of itself* — circular — and its `aaa`/`zzz` fixtures happened
+  to match NTFS readdir order, so removing any of the three sorts left the suite
+  green. T2.30 replaces it with `alpha`/`apple`/`Beta`/`Zebra`, where NTFS order
+  and code-point order provably differ, and asserts that premise.
+- **`list()`'s reuse check omitted `baseName`.** Renaming a suffixed file to
+  exactly the name its suffix had produced left a stale `baseName` in the record,
+  costing one failed `get()` before self-healing. Now compared.
+
+### Changed
+
+- The `description` frontmatter value no longer contains a colon followed by a
+  space. Everything the model sees is unchanged apart from the punctuation.
+
+### Verification
+
+- `node --test "test/*.test.mjs"` — 80 gates, all passing.
+- Description accept/reject behaviour cross-checked against the real `yaml`
+  package the harness uses: **0 disagreements**.
+- T1.10 was mutation-verified: reintroducing the colon in the shipped description
+  makes it fail (and takes six other gates with it).
+- Packed artifact reinstalled and exercised end to end.
+
 ## [1.1.2] — 2026-09-14
 
 Third review round. The headline defect is in candidate identity — the same area

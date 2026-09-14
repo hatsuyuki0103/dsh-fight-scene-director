@@ -3,6 +3,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { KEBAB_RE, parseFrontmatter, readSkillFile } from '../lib/skills-provider.mjs'
@@ -125,4 +126,88 @@ test('T1.7 skills/ 下技能名全局唯一且全部 kebab-case', async () => {
   assert.ok(names.length >= 1)
   assert.equal(new Set(names).size, names.length, `技能名重复: ${names.join(', ')}`)
   assert.equal(path.dirname(SKILL_FILE), SKILL_DIR)
+})
+
+test('T1.10 frontmatter 的标量必须是合法 YAML（静态判据 + 有 yaml 包时对拍）', async () => {
+  // 这一条是**本该最早存在**的门禁：本包的 SKILL.md 一度写成
+  // `description: Design ... prompts: choreography, ...`——值里含「冒号 + 空白」，
+  // 在 YAML 里是嵌套映射 → 官方 provider 把整个文件丢掉（技能凭空消失），
+  // 而我们自己的宽松解析器照常发布。
+  //
+  // 判定分两层：静态判据永远跑（上面那个形态就是它该抓的），
+  // 拿得到真实 yaml 包时再额外对拍一遍。不 hardcode 某台机器的绝对路径——
+  // 那会在 CI 上静默退化成「永远只跑静态判据」而不自知。
+  const entries = await readdir(SKILLS_DIR, { withFileTypes: true })
+  const files = []
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const file = path.join(SKILLS_DIR, entry.name, 'SKILL.md')
+    if (existsSync(file)) files.push(file)
+  }
+  assert.ok(files.length > 0)
+
+  /** 静态判据：非引号的标量形态里不得出现「冒号 + 空白」或以冒号结尾。 */
+  const staticProblems = (raw) => {
+    const end = raw.indexOf('\n---', 3)
+    if (!raw.startsWith('---') || end === -1) return ['缺少 frontmatter']
+    const problems = []
+    for (const line of raw.slice(3, end).split(/\r?\n/)) {
+      const m = /^("([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))\s*:\s*(.*)$/.exec(line)
+      if (!m) continue
+      const key = m[2] ?? m[3] ?? m[4]
+      const value = m[5] ?? ''
+      if (value.startsWith('"') || value.startsWith("'")) continue // 引号内合法
+      const bare = value.replace(/\s#.*$/, '').trimEnd()
+      // 注释行／空值不算问题（语义上是「没写」），会被上层跳过并诊断
+      if (bare === '' || bare.startsWith('#')) continue
+      if (/:\s/.test(bare) || bare.endsWith(':')) {
+        problems.push(`${key}: 值里含「冒号 + 空白」，会被 YAML 解析成嵌套映射: ${JSON.stringify(bare.slice(0, 50))}`)
+      }
+      if (/^[|>]/.test(bare)) problems.push(`${key}: 值以块标量指示符开头`)
+      if (/^[-?*@`]/.test(bare)) problems.push(`${key}: 值以 YAML 保留指示符开头`)
+      if (/^[&!][^\s]*$/.test(bare)) problems.push(`${key}: 只有锚点/标签指示符，没有值`)
+    }
+    return problems
+  }
+
+  for (const file of files) {
+    const raw = await readText(file)
+    assert.deepEqual(staticProblems(raw), [], `${file} 的 frontmatter 含非法标量（官方 provider 会丢弃该技能）`)
+  }
+
+  // 有真实 yaml 包时对拍（软性：环境里没有也照样跑静态判据）
+  let YAML
+  try {
+    const { createRequire } = await import('node:module')
+    const require = createRequire(import.meta.url)
+    for (const specifier of ['yaml', '@deepseek-ai/dsh-skill-filesystem']) {
+      try {
+        const resolved = require.resolve(specifier)
+        const anchor = specifier === 'yaml' ? resolved : createRequire(resolved).resolve('yaml')
+        YAML = createRequire(anchor)('yaml')
+        break
+      } catch {
+        // 试下一个
+      }
+    }
+  } catch {
+    YAML = undefined
+  }
+  if (YAML === undefined) return
+
+  for (const file of files) {
+    const raw = await readText(file)
+    const end = raw.indexOf('\n---', 3)
+    let parsed
+    let failure
+    try {
+      parsed = YAML.parse(raw.slice(3, end))
+    } catch (error) {
+      failure = String(error.message).split('\n')[0]
+    }
+    assert.equal(failure, undefined, `${file} 的 frontmatter 不是合法 YAML: ${failure}`)
+    assert.equal(typeof parsed?.name, 'string', `${file}: name 必须是字符串`)
+    assert.equal(typeof parsed?.description, 'string', `${file}: description 必须是字符串`)
+    assert.ok(parsed.description.trim() !== '', `${file}: description 不能为空`)
+  }
 })

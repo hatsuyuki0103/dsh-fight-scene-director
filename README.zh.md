@@ -32,7 +32,7 @@ dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director
 所以**不需要 npm 账号，也不需要包已发布到 npm**。需要可复现时在末尾加 `#<tag>` 钉版本：
 
 ```bash
-dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director#v1.1.2
+dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director#v1.1.3
 ```
 
 安装后**重启 harness**，让新的 profile 层被组合进去。
@@ -42,7 +42,7 @@ dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director#v1.1.
 每个 release 都附带了打包产物，pnpm 可以直接装：
 
 ```bash
-dsh plugin --profile web add https://github.com/hatsuyuki0103/dsh-fight-scene-director/releases/download/v1.1.2/dsh-fight-scene-director-1.1.2.tgz
+dsh plugin --profile web add https://github.com/hatsuyuki0103/dsh-fight-scene-director/releases/download/v1.1.3/dsh-fight-scene-director-1.1.3.tgz
 ```
 
 适用于两种情况：你的网络对 GitHub 的 git-over-HTTPS 不通；或者你想要一个按字节钉定的
