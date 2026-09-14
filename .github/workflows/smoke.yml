@@ -65,17 +65,22 @@ jobs:
 
       # `dsh plugin list` is a pnpm passthrough: it proves a dependency exists,
       # not that anything is mounted. The composed tree is the real check.
+      # NOTE: the row id is the PACKAGE name. `fsd-skills` is the provider's
+      # internal name and does not appear in the profile tree at all.
       - name: Assert the composed profile tree carries the plugin row
         run: |
           set -euo pipefail
           export DSH_HOME="$RUNNER_TEMP/dsh-home"
           dsh --profile headless --dump-config > "$RUNNER_TEMP/tree.yml"
           echo "--- composed row ---"
-          grep -B1 -A2 'fsd-skills' "$RUNNER_TEMP/tree.yml"
-          grep -q 'fsd-skills' "$RUNNER_TEMP/tree.yml" \
-            || { echo 'FAIL: fsd-skills row missing from composed tree'; exit 1; }
+          grep -B1 -A2 'id: dsh-fight-scene-director' "$RUNNER_TEMP/tree.yml"
+          grep -q 'id: dsh-fight-scene-director' "$RUNNER_TEMP/tree.yml" \
+            || { echo 'FAIL: plugin row id missing from composed tree'; exit 1; }
           grep -q 'name: dsh-fight-scene-director' "$RUNNER_TEMP/tree.yml" \
             || { echo 'FAIL: plugin row does not name the package'; exit 1; }
+          if grep -q 'fsd-skills' "$RUNNER_TEMP/tree.yml"; then
+            echo 'FAIL: provider-internal name leaked into a patch row id'; exit 1
+          fi
           echo 'composed tree OK'
 
       - name: Load the skill out of the installed copy

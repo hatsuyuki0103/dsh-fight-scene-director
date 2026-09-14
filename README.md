@@ -91,13 +91,15 @@ mounted":
 dsh plugin --profile web list
 
 # 2. the composed profile tree carries the plugin's row
-dsh --profile web --dump-config | grep -B1 -A2 'id: dsh-fight-scene-director'
+dsh --profile web --dump-config > tree.yml
+grep -B1 -A2 'id: dsh-fight-scene-director' tree.yml     # macOS / Linux
+Select-String 'id: dsh-fight-scene-director' tree.yml -Context 1,2   # Windows PowerShell
 ```
 
 Step 2 must print the row with `id: dsh-fight-scene-director` and
 `name: dsh-fight-scene-director`. A dependency without a composed row is
 installed but never mounted. (The skill provider's own internal name is
-`fsd-skills`; that appears in logger output, not in the profile tree.)
+`fsd-skills`; that appears in logger output, never as a patch row id.)
 
 Inside a session, ask for a fight scene in plain words — the skill is
 model-invocable, so `帮我设计一段 30 秒的剑客对决打戏` is enough. To invoke it

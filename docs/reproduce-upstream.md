@@ -51,24 +51,25 @@ for f in /tmp/upstream-refs/*.md; do
 done | sort -k2
 ```
 
-Windows / PowerShell 版本（用 Node 处理 base64 与哈希，不依赖 `Get-FileHash`，
-也不依赖 `[IO.File]::`——在受限语言模式的沙箱里这些会被拦下）：
+Windows / PowerShell 版本（用 Node 处理 base64 与哈希，不依赖 `Get-FileHash`）：
 
 ```powershell
 $repo = 'ZzzAloong/fight-scene-director'
 $commit = '6265df37ae701449ef672f46db65ab15c4af9fc2'
 $dest = "$env:TEMP\upstream-refs"; New-Item -ItemType Directory -Force $dest | Out-Null
-foreach ($f in 'choreography-and-camera','examples','interaction-routing','output-format','trajectory-workflow') {
+$files = 'choreography-and-camera','examples','interaction-routing','output-format','trajectory-workflow'
+$payload = @{}
+foreach ($f in $files) {
   $r = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/contents/references/$f.md?ref=$commit" `
         -Headers @{ 'User-Agent'='dsh'; 'Accept'='application/vnd.github+json' }
-  [IO.File]::WriteAllBytes("$dest\$f.md", [Convert]::FromBase64String($r.content))
+  $payload[$f] = $r.content          # base64，交给 Node 解码写盘
 }
-node -e "const {createHash}=require('node:crypto'),fs=require('node:fs');for(const f of fs.readdirSync(process.argv[1]).sort())console.log(createHash('sha256').update(fs.readFileSync(process.argv[1]+'/'+f)).digest('hex'),f)" $dest
+$json = $payload | ConvertTo-Json -Compress
+node -e "const {createHash}=require('node:crypto'),fs=require('node:fs'),path=require('node:path');const d=process.argv[1],p=JSON.parse(process.argv[2]);for(const [f,b64] of Object.entries(p)){const buf=Buffer.from(b64,'base64');fs.writeFileSync(path.join(d,f+'.md'),buf);}for(const f of fs.readdirSync(d).sort())console.log(createHash('sha256').update(fs.readFileSync(path.join(d,f))).digest('hex'),f)" $dest $json
 ```
 
-> 如果上面的 `[IO.File]::WriteAllBytes` 被沙箱以「only core types」拒绝，把下载换成
-> `Invoke-RestMethod ... | ConvertFrom-Json` 后交给 Node 写盘，或者直接在 bash / WSL
-> 里跑前一节的命令——两条路产出的字节完全相同。
+> 这里刻意不让 PowerShell 碰字节：受限语言模式的沙箱会拒绝 `[IO.File]::` 之类的 .NET 静态调用，
+> 而 `Invoke-RestMethod` + Node 的组合在两种模式下都能跑，产出的字节与上面 bash 版本完全相同。
 
 ## 4. 与夹具对账
 

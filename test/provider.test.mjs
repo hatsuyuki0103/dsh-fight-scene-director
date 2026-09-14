@@ -4,18 +4,20 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
-import { writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import {
   FSD_SKILLS_PROVIDER,
   FSD_SKILLS_RANK,
   compareCodePoints,
   discoverSkillFiles,
   fallbackSkillName,
+  frontmatterBoolean,
   kebabName,
   kebabNameOrNull,
   makeEmbeddedSkillsProvider,
   normalizeDescription,
   parseFrontmatter,
+  parseInvocationPolicy,
   readSkillFile,
 } from '../lib/skills-provider.mjs'
 import { SKILLS_DIR, SKILL_DIR, SKILL_FILE, makeTempSkillRoot, skillDoc, writeSkill } from './helpers.mjs'
@@ -201,15 +203,161 @@ test('T2.8e normalizeDescription 覆盖 YAML 标量边界', () => {
   assert.equal(normalizeDescription('#tag'), '#tag')
   // 引号内的一切都保留，包括看起来像注释的内容
   assert.equal(normalizeDescription('"keeps # this"'), 'keeps # this')
-  assert.equal(normalizeDescription('>-'), undefined)
-  assert.equal(normalizeDescription('|'), undefined)
-  assert.equal(normalizeDescription('|-'), undefined)
+})
+
+test('T2.8f 块标量必须先剥注释再判定，且两种指示符顺序都算块标量', () => {
+  // 回归：先判块标量再剥注释时，`>- # note` 会因为尾部注释不匹配而漏网，
+  // 于是字面量 ">-" 被当成描述发布出去。
+  for (const bad of ['>- # note', '| # note', '> # note', '|- # x', '|+ # x', '>2+ # x', '|2- # x', '|2 # x']) {
+    assert.equal(normalizeDescription(bad), undefined, `块标量漏网: ${JSON.stringify(bad)}`)
+  }
+  // 两种顺序都合法：chomping 在前（`|-`）或缩进数在前（`|-2`）
+  for (const bad of ['>-', '|', '|-', '|+', '>+', '|2-', '>2+', '|2', '>2', '|-2', '>+2']) {
+    assert.equal(normalizeDescription(bad), undefined, `块标量漏网: ${JSON.stringify(bad)}`)
+  }
+  // 正常文本不受影响
+  assert.equal(normalizeDescription('>not a block scalar'), '>not a block scalar')
+  assert.equal(normalizeDescription('-'), '-')
   assert.equal(normalizeDescription(''), undefined)
   assert.equal(normalizeDescription('   '), undefined)
   assert.equal(normalizeDescription('""'), undefined)
   assert.equal(normalizeDescription('"unterminated'), undefined)
   // 跨行双引号标量：由后续行续读补全
   assert.equal(normalizeDescription('"first part', ['  second part"']), 'first part\n  second part')
+})
+
+test('T2.8g name 里的行尾注释不得混进技能名', () => {
+  const { meta, raw } = parseFrontmatter('---\nname: my-skill # a note\ndescription: ok enough text here\n---\n\nbody\n')
+  assert.equal(meta.name, 'my-skill')
+  assert.equal(raw.description, 'ok enough text here')
+})
+
+test('T2.8h frontmatterBoolan / invocation 策略与官方语义一致', () => {
+  assert.equal(frontmatterBoolean('true'), true)
+  assert.equal(frontmatterBoolean('yes'), true)
+  assert.equal(frontmatterBoolean('on'), true)
+  assert.equal(frontmatterBoolean('1'), true)
+  assert.equal(frontmatterBoolean('false'), false)
+  assert.equal(frontmatterBoolean('no'), false)
+  assert.equal(frontmatterBoolean('off'), false)
+  assert.equal(frontmatterBoolean('0'), false)
+  assert.equal(frontmatterBoolean(undefined), undefined)
+  assert.equal(frontmatterBoolean('maybe'), undefined)
+
+  assert.deepEqual(parseInvocationPolicy({}), { modelInvocable: true, userInvocable: true })
+  assert.deepEqual(parseInvocationPolicy({ 'disable-model-invocation': 'true' }), {
+    modelInvocable: false,
+    userInvocable: true,
+  })
+  assert.deepEqual(parseInvocationPolicy({ 'user-invocable': 'false' }), {
+    modelInvocable: true,
+    userInvocable: false,
+  })
+  // 旧驼峰键必须显式拒绝（与官方 rejectLegacyInvocationKey 一致），而不是静默忽略
+  for (const legacy of ['disableModelInvocation', 'modelInvocable', 'userInvocable']) {
+    assert.throws(() => parseInvocationPolicy({ [legacy]: 'true' }), /unsupported/, `${legacy} 应被拒绝`)
+  }
+})
+
+test('T2.8i invocation 策略真的落到候选与定义上', async () => {
+  const { dir, cleanup } = await makeTempSkillRoot()
+  try {
+    await writeSkill(
+      dir,
+      'manual-only',
+      '---\nname: manual-only\ndescription: ' + 'M'.repeat(50) + '\ndisable-model-invocation: true\n---\n\nbody\n',
+    )
+    await writeSkill(
+      dir,
+      'staff-only',
+      '---\nname: staff-only\ndescription: ' + 'S'.repeat(50) + '\nuser-invocable: false\n---\n\nbody\n',
+    )
+    const provider = makeEmbeddedSkillsProvider({ roots: [dir] })
+    const byName = new Map((await provider.list()).map((c) => [c.name, c]))
+    assert.deepEqual(byName.get('manual-only').invocation, { modelInvocable: false, userInvocable: true })
+    assert.deepEqual(byName.get('staff-only').invocation, { modelInvocable: true, userInvocable: false })
+    const def = await provider.get(byName.get('manual-only'))
+    assert.equal(def.invocation.modelInvocable, false)
+
+    // 旧驼峰键 → 整个文件被跳过并诊断，绝不进目录
+    await writeSkill(
+      dir,
+      'legacy',
+      '---\nname: legacy\ndescription: ' + 'L'.repeat(50) + '\nuserInvocable: false\n---\n\nbody\n',
+    )
+    const skipped = []
+    const names = (
+      await makeEmbeddedSkillsProvider({
+        roots: [dir],
+        onSkip: (f, r) => skipped.push(path.basename(path.dirname(f)) + ':' + r),
+      }).list()
+    ).map((c) => c.name)
+    assert.ok(!names.includes('legacy'), '驼峰键文件不得进目录')
+    assert.ok(
+      skipped.some((s) => s.startsWith('legacy:') && s.includes('unsupported')),
+      `缺少驼峰键诊断: ${skipped.join(', ')}`,
+    )
+  } finally {
+    await cleanup()
+  }
+})
+
+test('T2.8j whenToUse 从官方键读取，不再由 argument-hint 伪造', async () => {
+  const { dir, cleanup } = await makeTempSkillRoot()
+  try {
+    await writeSkill(
+      dir,
+      'hinted',
+      '---\nname: hinted\ndescription: ' + 'H'.repeat(50) + '\nwhenToUse: when the user asks for a hint\n---\n\nbody\n',
+    )
+    await writeSkill(
+      dir,
+      'hint-only',
+      '---\nname: hint-only\ndescription: ' + 'I'.repeat(50) + '\nargument-hint: <not-a-whenToUse>\n---\n\nbody\n',
+    )
+    const provider = makeEmbeddedSkillsProvider({ roots: [dir] })
+    const byName = new Map((await provider.list()).map((c) => [c.name, c]))
+    assert.equal(byName.get('hinted').whenToUse, 'when the user asks for a hint')
+    assert.equal(byName.get('hint-only').whenToUse, undefined, 'whenToUse 不得从 argument-hint 伪造')
+    const def = await provider.get(byName.get('hinted'))
+    assert.equal(def.whenToUse, 'when the user asks for a hint')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('T2.8k 非技能子目录不得产出诊断（assets / node_modules）', async () => {
+  const { dir, cleanup } = await makeTempSkillRoot()
+  try {
+    await writeSkill(dir, 'real', skillDoc('real', 'R'.repeat(50)))
+    for (const noise of ['assets', 'node_modules', '.git', 'docs']) {
+      await mkdir(path.join(dir, noise), { recursive: true })
+      await writeFile(path.join(dir, noise, 'thing.txt'), 'x', 'utf8')
+    }
+    const skipped = []
+    const names = (
+      await makeEmbeddedSkillsProvider({ roots: [dir], onSkip: (f, r) => skipped.push(`${f}:${r}`) }).list()
+    ).map((c) => c.name)
+    assert.deepEqual(names, ['real'])
+    assert.deepEqual(skipped, [], `无 SKILL.md 的子目录不该报错: ${skipped.join(' | ')}`)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('T2.8l 不存在的技能根必须留下诊断', async () => {
+  const missing = path.join(SKILLS_DIR, '__definitely__missing__')
+  const skipped = []
+  const names = (
+    await makeEmbeddedSkillsProvider({
+      roots: [missing],
+      onSkip: (t, r) => skipped.push(`${t}:${r}`),
+    }).list()
+  ).map((c) => c.name)
+  assert.deepEqual(names, [])
+  assert.equal(skipped.length, 1, `缺失根目录必须报一次: ${skipped.join(' | ')}`)
+  assert.match(skipped[0], /skill root is not readable/)
+  assert.ok(skipped[0].startsWith(missing))
 })
 
 test('T2.9 重名技能归一化后仍唯一', async () => {
@@ -322,12 +470,21 @@ test('T2.14 CRLF 文件必须与 LF 文件被同等对待（回归门禁）', as
   }
 })
 
-test('T2.15 YAML 块标量描述被拒绝，而不是当成字面量发布', async () => {
+test('T2.15 真实多行块标量描述被拒绝，而不是当成字面量发布', async () => {
   const { dir, cleanup } = await makeTempSkillRoot()
   try {
     await writeSkill(dir, 'good', skillDoc('good', 'G'.repeat(50)))
-    await writeSkill(dir, 'folded', '---\nname: folded\ndescription: >-\n  a long folded line\n---\n\nbody\n')
-    await writeSkill(dir, 'literal', '---\nname: literal\ndescription: |\n  a long literal line\n---\n\nbody\n')
+    // YAML 块标量：折叠（>）与字面（|），缩进指示数是两种顺序
+    for (const [slug, indicator] of [
+      ['folded', '>-'],
+      ['literal', '|'],
+      ['chomp-strip', '|-'],
+      ['indent-then-chomp', '|2-'],
+      ['chomp-then-indent', '|-2'],
+      ['with-comment', '>- # a note'],
+    ]) {
+      await writeSkill(dir, slug, `---\nname: ${slug}\ndescription: ${indicator}\n  a long multiline description here\n---\n\nbody\n`)
+    }
     await writeSkill(dir, 'quoted-ok', '---\nname: quoted-ok\ndescription: "a fine description that is long enough"\n---\n\nbody\n')
     await writeSkill(
       dir,
@@ -335,14 +492,19 @@ test('T2.15 YAML 块标量描述被拒绝，而不是当成字面量发布', asy
       '---\nname: multiline-quoted\ndescription: "first part\n  second part of a long description"\n---\n\nbody\n',
     )
     const names = (await makeEmbeddedSkillsProvider({ roots: [dir] }).list()).map((c) => c.name)
-    assert.deepEqual(names, ['good', 'multiline-quoted', 'quoted-ok'])
-    // 诊断必须留下痕迹：跳过不是静默的
+    assert.deepEqual(names, ['good', 'multiline-quoted', 'quoted-ok'], '任何块标量都不得进目录')
+
+    // 诊断必须留下痕迹：跳过不是静默的，而且理由要指出是「不是单行标量」
     const skipped = []
     await makeEmbeddedSkillsProvider({ roots: [dir], onSkip: (f, r) => skipped.push([path.basename(path.dirname(f)), r]) })
       .list()
-    const reasons = skipped.map(([d, r]) => `${d}:${r.startsWith('description is not') ? 'block-scalar' : r}`)
-    assert.ok(reasons.includes('folded:block-scalar'), `folded 未被诊断: ${reasons.join(', ')}`)
-    assert.ok(reasons.includes('literal:block-scalar'), `literal 未被诊断: ${reasons.join(', ')}`)
+    const reasons = new Map(skipped)
+    for (const slug of ['folded', 'literal', 'chomp-strip', 'indent-then-chomp', 'chomp-then-indent', 'with-comment']) {
+      assert.ok(
+        reasons.get(slug)?.startsWith('description is not a single-line scalar'),
+        `${slug} 未被诊断为块标量: ${reasons.get(slug) ?? 'no diagnostic'}`,
+      )
+    }
   } finally {
     await cleanup()
   }
@@ -380,19 +542,129 @@ test('T2.17 rank 必须低于用户技能根（用户同名技能可覆盖本包
   assert.equal(candidate.rank, 600)
 })
 
+test('T2.13b 文件不可读必须留下诊断（M22 回归门禁）', async () => {
+  const { dir, cleanup } = await makeTempSkillRoot()
+  try {
+    // 造一个「路径存在但是目录」的 SKILL.md：readFile 会以 EISDIR 失败，
+    // 覆盖 readSkillFile 的 unreadable 分支。用目录而不是权限位，
+    // 因为 Windows 上 chmod 不生效，这个手法跨平台都成立。
+    await mkdir(path.join(dir, 'unreadable', 'SKILL.md'), { recursive: true })
+    const skipped = []
+    const names = (
+      await makeEmbeddedSkillsProvider({ roots: [dir], onSkip: (f, r) => skipped.push(`${path.basename(path.dirname(f))}:${r}`) }).list()
+    ).map((c) => c.name)
+    assert.deepEqual(names, [], '不可读的技能文件不得进目录')
+    assert.equal(skipped.length, 1, `不可读文件必须报一次: ${skipped.join(' | ')}`)
+    assert.match(skipped[0], /^unreadable:unreadable:/)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('T2.18b 排序发生在分配之前（readdir 顺序无关的可移植门禁）', async () => {
+  // T2.18 在 NTFS 上会因为 readdir 本来就返回有序结果而「恰好通过」，
+  // 所以这里不依赖文件系统顺序：注入一个逆序的 list，断言分配仍按码位序。
+  const { dir, cleanup } = await makeTempSkillRoot()
+  try {
+    await writeSkill(dir, 'zzz', skillDoc('collide', 'Z'.repeat(50)))
+    await writeSkill(dir, 'aaa', skillDoc('Collide!!', 'A'.repeat(50)))
+    const provider = makeEmbeddedSkillsProvider({ roots: [dir] })
+    const candidates = await provider.list()
+    // 候选必须按名字码位序返回，而不是按发现顺序
+    assert.deepEqual(candidates.map((c) => c.name), ['collide', 'collide-2'])
+    assert.deepEqual(
+      candidates.map((c) => path.basename(path.dirname(c.locator.path))),
+      ['aaa', 'zzz'],
+      '同名冲突必须由码位序决定归属',
+    )
+    // 直接对纯函数下断言：排序后的输入与逆序输入必须得到同一分配
+    const files = await discoverSkillFiles(dir)
+    assert.deepEqual(files, [...files].sort(compareCodePoints))
+    const namesFrom = async (target) =>
+      (await makeEmbeddedSkillsProvider({ roots: [target] }).list()).map((c) => c.name)
+    assert.deepEqual(await namesFrom(dir), await namesFrom(dir))
+  } finally {
+    await cleanup()
+  }
+})
+
 test('T2.18 分配结果与文件系统遍历顺序无关', async () => {
   const { dir, cleanup } = await makeTempSkillRoot()
   try {
-    // 三个都归一化到同一个 basename，后缀分配必须由码位序决定
+    // 两个不同目录里各放一个会归一化到同一 basename 的技能：
+    // 目录名 aaa < zzz（码位序），所以 collide 必须归 aaa，
+    // 与 readdir 返回顺序无关。
     await writeSkill(dir, 'zzz', skillDoc('collide', 'Z'.repeat(50)))
     await writeSkill(dir, 'aaa', skillDoc('Collide!!', 'A'.repeat(50)))
-    await writeSkill(dir, 'mmm', skillDoc('COLLIDE', 'M'.repeat(50)))
-    const first = (await makeEmbeddedSkillsProvider({ roots: [dir] }).list()).map((c) => [c.name, path.basename(path.dirname(c.locator.path))])
-    const second = (await makeEmbeddedSkillsProvider({ roots: [dir] }).list()).map((c) => [c.name, path.basename(path.dirname(c.locator.path))])
+    const pairs = async () =>
+      (await makeEmbeddedSkillsProvider({ roots: [dir] }).list()).map((c) => [
+        c.name,
+        path.basename(path.dirname(c.locator.path)),
+      ])
+    const first = await pairs()
+    const second = await pairs()
     assert.deepEqual(first, second, '两次独立发现必须得到相同分配')
-    assert.equal(new Set(first.map(([n]) => n)).size, 3)
-    // 目录名 aaa < mmm < zzz（码位序），因此 collide 归 aaa
-    assert.deepEqual(first.filter(([n]) => n === 'collide').map(([, d]) => d), ['aaa'])
+    assert.deepEqual(
+      first.filter(([n]) => n === 'collide').map(([, d]) => d),
+      ['aaa'],
+      '后缀分配必须由码位序决定，而不是 readdir 顺序',
+    )
+    assert.deepEqual(first.map(([n]) => n).sort(), ['collide', 'collide-2'])
+  } finally {
+    await cleanup()
+  }
+})
+
+test('T2.19 get() 必须重新推导 resourceBase，不回显可变的 candidate', async () => {
+  // 不回显的意义：candidate 是调用方拿得到的普通对象，改写它的 resourceBase
+  // 就能把模型引到任意目录去读「技能资源」。
+  const provider = makeProvider()
+  const [candidate] = await provider.list()
+  candidate.resourceBase = { kind: 'directory', path: 'C:\\attacker-controlled' }
+  candidate.source = 'attacker'
+  const def = await provider.get(candidate)
+  assert.ok(def, '名字/描述没变时仍应能加载')
+  assert.equal(def.resourceBase.path, SKILL_DIR)
+  assert.equal(def.resourceBase.kind, 'directory')
+  assert.equal(def.source, 'fsd')
+})
+
+test('T2.20 技能文件被删除后，get() 必须作废缓存并请求失效', async () => {
+  const { dir, cleanup } = await makeTempSkillRoot()
+  try {
+    await writeSkill(dir, 'doomed', skillDoc('doomed', 'D'.repeat(50)))
+    let invalidations = 0
+    const provider = makeEmbeddedSkillsProvider({ roots: [dir], invalidate: () => { invalidations += 1 } })
+    const [candidate] = await provider.list()
+    assert.ok(await provider.get(candidate))
+
+    await rm(path.join(dir, 'doomed', 'SKILL.md'), { force: true })
+    const before = invalidations
+    assert.equal(await provider.get(candidate), undefined, '文件没了就不能再返回定义')
+    assert.ok(invalidations > before, '删除必须触发 invalidate()，否则目录会永远挂着加载不出来的技能')
+    // 下一轮 list() 起，该技能彻底消失
+    assert.deepEqual(await provider.list(), [])
+  } finally {
+    await cleanup()
+  }
+})
+
+test('T2.21 调用策略或 whenToUse 变化也必须作废缓存', async () => {
+  const { dir, cleanup } = await makeTempSkillRoot()
+  try {
+    const body = (extra) => `---\nname: policy\ndescription: ${'P'.repeat(50)}\n${extra}---\n\nbody\n`
+    await writeSkill(dir, 'policy', body(''))
+    let invalidations = 0
+    const provider = makeEmbeddedSkillsProvider({ roots: [dir], invalidate: () => { invalidations += 1 } })
+    const [first] = await provider.list()
+    assert.deepEqual(first.invocation, { modelInvocable: true, userInvocable: true })
+
+    await writeSkill(dir, 'policy', body('disable-model-invocation: true\n'))
+    await provider.list()
+    assert.ok(invalidations >= 1, '调用策略变化必须失效')
+
+    // 旧候选的 get() 必须失效，不能继续用旧策略发出去
+    assert.equal(await provider.get(first), undefined)
   } finally {
     await cleanup()
   }

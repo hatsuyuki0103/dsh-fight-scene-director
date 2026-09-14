@@ -11,7 +11,7 @@
 
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { makeEmbeddedSkillsProvider } from './lib/skills-provider.mjs'
+import { FSD_SKILLS_PROVIDER, makeEmbeddedSkillsProvider } from './lib/skills-provider.mjs'
 
 export const name = 'fsd-skills'
 
@@ -87,7 +87,9 @@ export function apply(ctx, config = {}, control) {
   try {
     ctx.skills.registerProvider((providerControl) => makeEmbeddedSkillsProvider({
       roots,
-      provider: 'fsd-skills',
+      // 用常量而不是字面量：提供方名字一旦与注册表记录的名字不一致，
+      // 注册表会拒绝它产出的每一个候选，整个技能目录直接消失。
+      provider: FSD_SKILLS_PROVIDER,
       maxSkills,
       invalidate: typeof providerControl?.invalidate === 'function' ? () => providerControl.invalidate() : undefined,
       // 一个「本该出现却没出现」的技能，必须留下可查的痕迹。

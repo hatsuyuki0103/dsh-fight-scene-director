@@ -81,6 +81,33 @@ test('T4.4 patch 行的 name 与包名逐字一致（真断言，不看注释）
   assert.equal(rowName, pkg.name)
 })
 
+test('T4.5 smoke.yml 的合成树断言必须匹配真实行 id（拒绝 fsd-skills）', async () => {
+  // 回归：行 id 从 `fsd-skills` 改成包名后，workflow 里的 grep 忘了同步，
+  // 于是整个项目唯一的真实端到端安装门禁变红。这一类「文档/CI 里写死的标识符」
+  // 没有类型系统兜着，只能靠断言。
+  const yml = await readText(path.join(ROOT, '.github', 'workflows', 'smoke.yml'))
+  // 只取「正向断言」行（`grep -q '…' || { echo FAIL … }` 这种），
+  // 排除刻意保留的反向断言（`if grep -q 'fsd-skills' … leaked into a patch row id`）。
+  const positive = yml
+    .split(/\r?\n/)
+    .filter((l) => /grep\s+-q/.test(l) && !/leaked into a patch row id|^\s*if\s/.test(l))
+  assert.ok(positive.length >= 2, `smoke.yml 应当正向断言行 id 与包名两项，实际 ${positive.length}`)
+  assert.ok(
+    !positive.some((l) => /fsd-skills/.test(l)),
+    `smoke.yml 不得用 fsd-skills 判断合成树——那是提供方内部名，不在 profile 树里:\n${positive.join('\n')}`,
+  )
+  assert.ok(
+    positive.some((l) => /'id: dsh-fight-scene-director'/.test(l)),
+    'smoke.yml 必须正向断言行 id `id: dsh-fight-scene-director`',
+  )
+  assert.ok(
+    positive.some((l) => /'name: dsh-fight-scene-director'/.test(l)),
+    'smoke.yml 必须正向断言行 name 为真实包名',
+  )
+  // 反向断言（防止内部名泄漏回行 id）也要在
+  assert.ok(/leaked into a patch row id/.test(yml), '应保留对内部名泄漏的反向断言')
+})
+
 test('T5.1 apply(ctx) 注册了恰好一个 provider 工厂，且产物形状正确', async () => {
   const { ctx, factories } = makeFakeCtx()
   apply(ctx, {})

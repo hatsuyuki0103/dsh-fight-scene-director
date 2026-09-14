@@ -81,7 +81,9 @@ dsh plugin --profile web add /绝对路径/dsh-fight-scene-director
 dsh plugin --profile web list
 
 # 2. 组合出来的 profile 树里有插件的行
-dsh --profile web --dump-config | Select-String 'id: dsh-fight-scene-director' -Context 1,1
+dsh --profile web --dump-config > tree.yml
+Select-String 'id: dsh-fight-scene-director' tree.yml -Context 1,2   # Windows PowerShell
+grep -B1 -A2 'id: dsh-fight-scene-director' tree.yml                 # macOS / Linux
 ```
 
 第 2 步必须打印出 `id: dsh-fight-scene-director` / `name: dsh-fight-scene-director`

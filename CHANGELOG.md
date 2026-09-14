@@ -4,6 +4,94 @@ All notable changes to this package are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] — 2026-09-14
+
+Follow-up from a second, mutation-driven review of 1.1.0. Two things were
+outright wrong: a shipped CI gate was red, and the 1.1.0 changelog made a
+promise about catalogue refresh that the harness cannot keep.
+
+### Fixed
+
+- **The end-to-end install gate was red.** `.github/workflows/smoke.yml` still
+  grepped the composed profile tree for `fsd-skills`, the provider's *internal*
+  name, which 1.1.0 deliberately removed from the patch row. Under
+  `set -euo pipefail` that step exited 1, so the project's only real
+  install-and-mount verification never passed. The assertion now greps
+  `id: dsh-fight-scene-director` / `name: dsh-fight-scene-director`, and
+  additionally fails if the internal name ever leaks back into a row id. Gated
+  by T4.5, which mutation-testing showed was previously unguarded.
+- **`description: >- # note` still published the literal `>-`.** The block-scalar
+  test ran *before* comment stripping, so a trailing YAML comment made an
+  otherwise-valid indicator look like ordinary text. The comment is now stripped
+  first. The indicator pattern also missed the bare chomping forms `>-` / `>+`
+  (and `|-2`-style orderings), all of which are legal YAML and were being
+  published verbatim. Gated by T2.8f and T2.15 (six indicator spellings).
+- **A deleted or unreadable skill stayed in the catalogue forever.** `get()`
+  returned `undefined` without dropping the cached entry, so the catalogue kept
+  advertising a skill whose every load failed — visible to the model as a skill
+  that exists but never works. It now drops the entry and requests
+  invalidation, mirroring the rename/mismatch branch. Gated by T2.20.
+- **`get()` still echoed `resourceBase` and `source` from the mutable
+  candidate.** The 1.1.0 fix covered `name` and `description` but not these, so
+  rewriting `candidate.resourceBase` redirected the harness's
+  `Base directory for this skill:` hint to any directory of the caller's
+  choosing — which the model would then read as skill resources. Both are now
+  re-derived from the file on disk. Gated by T2.19.
+- **Invocation policy was ignored, and `whenToUse` was fabricated.** The
+  official filesystem provider honours `disable-model-invocation` and
+  `user-invocable` and rejects the legacy camelCase spellings; this provider
+  hardcoded `{modelInvocable: true, userInvocable: true}` and derived
+  `whenToUse` from a non-standard `argument-hint`. A skill mounted through
+  `extraSkillDirs` that opted out of model invocation was therefore
+  force-advertised. The frontmatter contract now matches the official provider:
+  `whenToUse` is read from its own key, both policy booleans are parsed with the
+  official accepted spellings (`true`/`yes`/`on`/`1`, `false`/`no`/`off`/`0`),
+  and legacy camelCase keys are rejected with a diagnostic instead of being
+  silently ignored. Gated by T2.8h, T2.8i, T2.8j, T2.21.
+- **A missing skill root produced no diagnostic**, so a typo in
+  `extraSkillDirs` silently contributed nothing. Root-level read failures now
+  warn. Gated by T2.8l.
+- **Every non-skill subdirectory produced a bogus warning.** `assets/`,
+  `node_modules/`, `.git/` and friends each emitted
+  `skipped … (unreadable: ENOENT)`. Directory discovery now only admits
+  subdirectories that actually contain `SKILL.md`. Gated by T2.8k.
+- **An inline comment leaked into the skill name.** `name: my-skill # a note`
+  published `my-skill-comment`. Trailing comments are now stripped from every
+  frontmatter scalar, not just from the description. Gated by T2.8g.
+
+### Changed
+
+- **Corrected a false claim from 1.1.0.** That entry said an added skill
+  "appears without a harness restart". It does not, and it cannot: the skill
+  registry caches the collected catalogue and only re-invokes `list()` after an
+  invalidation, while the provider can only invalidate *from inside* a call the
+  registry has already made. What invalidation genuinely covers is a skill that
+  is **edited or removed** while a candidate is live — `get()` notices the drift
+  and forces a recollection. Adding a brand-new skill still requires a harness
+  restart, and the README and `lib/skills-provider.mjs` now say so.
+- The `source` field returned by `get()` is the literal `'fsd'` rather than an
+  echo of the candidate.
+- `README.md` gives both the POSIX `grep` and the PowerShell `Select-String`
+  form for the composed-tree check (the previous `| grep` pipeline failed on
+  Windows).
+- `docs/reproduce-upstream.md` no longer leads with `[IO.File]::WriteAllBytes`,
+  which is rejected in sandboxed ConstrainedLanguage PowerShell; the recipe
+  routes bytes through Node instead.
+- `index.mjs` imports `FSD_SKILLS_PROVIDER` instead of repeating the literal —
+  a divergence there would make the registry reject every candidate and take the
+  whole catalogue down.
+
+### Verification
+
+- `node --test "test/*.test.mjs"` — 68 gates, all passing.
+- 13 targeted mutations of the changes above, run in throwaway copies: **13/13
+  caught** (including reintroducing the red `smoke.yml` grep, which T4.5 now
+  catches).
+- The packed artifact was installed into a clean consumer and exercised end to
+  end against a real skill provider contract: rank 600, 426-character
+  description, 5/5 references resolving against `resourceBase`, forged
+  candidate refused.
+
 ## [1.1.0] — 2026-09-14
 
 Fixes from an independent adversarial review of 1.0.0. Two of these were
@@ -25,13 +113,15 @@ and the skill's catalog description both changed behaviour.
   `slice(0, 497) + '...'` (DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH = 500). The
   cut landed mid-word and dropped `Seedance`, `MiniMax`, and every Chinese
   trigger term, so the frontmatter additions advertised in 1.0.0 did nothing.
-  The description is rewritten to 397 characters with the trigger terms and
+  The description is rewritten to 426 characters with the trigger terms and
   model anchors front-loaded. Gated by T1.8, which asserts the description fits
   the visible budget *and* that each anchor survives inside it.
-- **Adding a new skill never invalidated the catalog.** The provider now
-  compares the visible catalog snapshot (name + description) between discovery
-  passes and calls `control.invalidate()` only when it actually differs, so a
-  newly added or edited skill appears without a harness restart. Gated by
+- **An edited skill never invalidated the catalog.** The provider now
+  compares the visible catalog snapshot (name, description, `whenToUse`, and
+  invocation policy) between discovery passes and calls `control.invalidate()`
+  only when it actually differs, so an edited skill is republished. Scope
+  correction: see 1.1.1 — this does **not** make a newly added skill appear,
+  because the registry only re-invokes `list()` after an invalidation. Gated by
   T5.7.
 - **An edited `description` kept serving the stale catalog line.** Candidate
   identity was cached on `(path, assignedName)`, so a changed description reused
@@ -78,8 +168,11 @@ and the skill's catalog description both changed behaviour.
 - Gated byte-identity for the vendored upstream copies in `docs/` and
   `LICENSE.upstream` (T3.6) — `THIRD_PARTY_NOTICES.md` claims they match
   upstream, and a claim without a gate drifts.
-- T3.7 — end-to-end reference integrity: every `references/...` path in the
-  loaded skill body must resolve on disk relative to `resourceBase`.
+- T3.7 — reference integrity in the loaded skill body: every
+  `references/...` path it mentions must exist on disk. (This checks the
+  repository's `references/` directory; the *installed-copy* check against the
+  provider-reported `resourceBase` is done end-to-end by `smoke.yml`, and by
+  T2.19 which asserts `resourceBase` is re-derived rather than echoed.)
 - T1.9 — the documented explicit invocation must be `/fight-scene-director`,
   not the non-existent `skill fight-scene-director`.
 
