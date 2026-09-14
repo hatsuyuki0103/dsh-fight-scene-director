@@ -34,6 +34,39 @@ test('T1.3 description 非空且足够具体（> 40 字符）', async () => {
   assert.match(skill.description, /MiniMax/)
 })
 
+test('T1.8 description 必须完整落在 DSH 目录截断预算内，且锚点前置', async () => {
+  // dsh-tool-skill 用 DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH=500，
+  // 渲染成 `- \`name\`: ` + slice(0, 497) + '...'。超长部分模型永远看不到，
+  // 所以「写在 description 里」不等于「模型能召回」。
+  const CATALOG_DESCRIPTION_MAX_LENGTH = 500
+  const VISIBLE_BUDGET = CATALOG_DESCRIPTION_MAX_LENGTH - 3
+  const skill = await readSkillFile(SKILL_FILE)
+  assert.ok(skill)
+  assert.ok(
+    skill.description.length <= VISIBLE_BUDGET,
+    `description ${skill.description.length} 字符超过目录可见预算 ${VISIBLE_BUDGET}；` +
+      '超出部分不会进入模型上下文，请把关键触发词前移或删减。',
+  )
+  const visible = skill.description.slice(0, VISIBLE_BUDGET)
+  for (const anchor of ['fight-scene', '打戏', '分镜', '轨迹图', 'Seedance', 'MiniMax']) {
+    assert.ok(visible.includes(anchor), `锚点 "${anchor}" 落在目录截断之外，模型看不到`)
+  }
+})
+
+test('T1.9 显式调用姿势写对了（/name，而不是 skill name）', async () => {
+  const skill = await readSkillFile(SKILL_FILE)
+  assert.ok(skill)
+  // dsh-tool-skill 的 SKILL_GESTURE = /(^|\s)\/([a-z0-9]+(?:-[a-z0-9]+)*)(?=\s|$)/
+  assert.ok(
+    /`\/fight-scene-director`/.test(skill.content),
+    'SKILL.md 必须告诉模型用户用 /fight-scene-director 显式调用',
+  )
+  assert.ok(
+    !/`skill fight-scene-director`/.test(skill.content),
+    '不应把 skill 工具调用写成面向用户的姿势',
+  )
+})
+
 test('T1.4 正文保留上游全部规则小节，且给出 DSH 调用说明', async () => {
   const skill = await readSkillFile(SKILL_FILE)
   assert.ok(skill)

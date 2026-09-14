@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: MIT
 # dsh-fight-scene-director bundle patch: mount the fight-scene-director host plugin.
+#
+# The row id is package-scoped on purpose. Cordis loader entry ids are global to
+# the composed tree, and a duplicate id fails at BOOT ("duplicate loader entry
+# id") rather than at `--dump-config` time. Since `dsh plugin add` installs
+# exactly this one row, keeping the id equal to the package name means the only
+# way to collide is adding this same plugin twice — which is the case that
+# should be loud. Do not mount this plugin more than once per profile.
 - insert:
-    - id: fsd-skills
+    - id: dsh-fight-scene-director
       name: dsh-fight-scene-director

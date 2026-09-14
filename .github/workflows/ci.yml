@@ -57,6 +57,8 @@ jobs:
             package/package.json \
             package/skills/fight-scene-director/SKILL.md \
             package/skills/fight-scene-director/references/output-format.md \
+            package/docs/PORT-NOTES.zh.md \
+            package/docs/upstream-SKILL.md \
             package/LICENSE.upstream \
             package/NOTICE
           do

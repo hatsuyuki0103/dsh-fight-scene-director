@@ -35,15 +35,14 @@ jobs:
           npm install -g @deepseek-ai/dsh
           dsh --version
 
-      - name: Install this repository as a plugin into a scratch profile
+      # This is the exact spec a user copies out of the README. It must be the
+      # primary thing this workflow exercises, not a stand-in for it.
+      - name: Install this repository from GitHub into a scratch profile
         run: |
           set -euo pipefail
           export DSH_HOME="$RUNNER_TEMP/dsh-home"
           mkdir -p "$DSH_HOME"
-          # Local path install proves the bundle patch + reconciliation path.
-          # (The github: spec resolves identically; it is exercised by the
-          # README instructions and is skipped here to keep CI offline-safe.)
-          dsh plugin --profile web add "$GITHUB_WORKSPACE"
+          dsh plugin --profile headless add "github:${{ github.repository }}"
 
       - name: Assert the plugin joined the bundle layer list
         run: |
@@ -51,7 +50,7 @@ jobs:
           export DSH_HOME="$RUNNER_TEMP/dsh-home"
           node -e "
             const fs = require('node:fs')
-            const p = process.env.DSH_HOME + '/profiles/web/package.json'
+            const p = process.env.DSH_HOME + '/profiles/headless/package.json'
             const pkg = JSON.parse(fs.readFileSync(p, 'utf8'))
             const bundles = pkg.dsh?.profile?.bundles ?? []
             if (!bundles.includes('dsh-fight-scene-director')) {
@@ -64,10 +63,40 @@ jobs:
             console.log('bundle layer OK:', bundles.join(', '))
           "
 
-      - name: Boot the profile and assert the skill is registered
+      # `dsh plugin list` is a pnpm passthrough: it proves a dependency exists,
+      # not that anything is mounted. The composed tree is the real check.
+      - name: Assert the composed profile tree carries the plugin row
         run: |
           set -euo pipefail
           export DSH_HOME="$RUNNER_TEMP/dsh-home"
-          # Compose the profile tree the same way the CLI does, then resolve the
-          # skill catalog from the mounted composition.
-          dsh plugin --profile web list
+          dsh --profile headless --dump-config > "$RUNNER_TEMP/tree.yml"
+          echo "--- composed row ---"
+          grep -B1 -A2 'fsd-skills' "$RUNNER_TEMP/tree.yml"
+          grep -q 'fsd-skills' "$RUNNER_TEMP/tree.yml" \
+            || { echo 'FAIL: fsd-skills row missing from composed tree'; exit 1; }
+          grep -q 'name: dsh-fight-scene-director' "$RUNNER_TEMP/tree.yml" \
+            || { echo 'FAIL: plugin row does not name the package'; exit 1; }
+          echo 'composed tree OK'
+
+      - name: Load the skill out of the installed copy
+        run: |
+          set -euo pipefail
+          export DSH_HOME="$RUNNER_TEMP/dsh-home"
+          node --input-type=module -e "
+            import path from 'node:path'
+            import { existsSync } from 'node:fs'
+            const base = process.env.DSH_HOME + '/profiles/headless/node_modules/dsh-fight-scene-director'
+            const mod = await import('file://' + base + '/index.mjs')
+            const factories = []
+            mod.apply({ skills: { registerProvider: (f) => { factories.push(f); return () => {} } } }, {})
+            const provider = await factories[0]()
+            const list = await provider.list()
+            const names = list.map((c) => c.name)
+            if (names.join(',') !== 'fight-scene-director') throw new Error('unexpected catalog: ' + names)
+            const def = await provider.get(list[0])
+            if (!def.content.includes('## Route the Request')) throw new Error('skill body not loaded')
+            const refs = [...new Set([...def.content.matchAll(/\]\((references\/[^)]+\.md)\)/g)].map((m) => m[1]))]
+            const missing = refs.filter((r) => !existsSync(path.join(def.resourceBase.path, r)))
+            if (missing.length) throw new Error('dangling references: ' + missing.join(', '))
+            console.log('installed package OK:', names[0], '|', refs.length, 'references resolve')
+          "

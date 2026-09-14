@@ -2,7 +2,22 @@ dsh-fight-scene-director
 Copyright (c) 2026 hatsuyuki0103
 
 This product is a DeepSeek Harness port of a third-party skill.
-================================================================
+
+Licensing layout
+----------------
+  LICENSE           MIT, Copyright (c) 2026 hatsuyuki0103 — covers this port:
+                    the plugin shell (index.mjs, lib/, cordis.patch.yml,
+                    package.json, test/, and the documentation written for
+                    this repository).
+  LICENSE.upstream  MIT, Copyright (c) 2026 AIZAO Aloong — the verbatim
+                    license of the original skill, covering everything
+                    derived from it.
+
+  Both license texts are kept as unmodified MIT so that license scanners
+  (including GitHub's licensee detection) identify this repository as MIT
+  without an attribution preamble breaking the pattern match. The
+  relationship between the two is described here rather than inside the
+  license files themselves.
 
 Original work
 -------------
@@ -22,13 +37,17 @@ What was ported
 
   skills/fight-scene-director/SKILL.md
       The original prose, headings, and rules are kept semantically
-      unchanged. Two additions were made for DeepSeek Harness:
-        - a "DeepSeek Harness Notes" section (how the skill is loaded and
-          how `references/...` paths resolve against the skill directory);
-        - a Chinese trigger vocabulary appended to the `description`
-          frontmatter field (DSH matches skills by description).
-      A stale "Created by AIZAO Aloong" body line was dropped because the
-      same credit is carried by this NOTICE, README.zh.md, and LICENSE.
+      unchanged. Changes for DeepSeek Harness:
+        - a "DeepSeek Harness Notes" section was added (how the skill is
+          loaded, how `/name` invocation works, and how `references/...`
+          paths resolve against the skill directory);
+        - the `description` frontmatter field was rewritten to carry the
+          Chinese trigger vocabulary and the target-model anchors within
+          DeepSeek Harness's 497-character catalog budget;
+        - the single-line `Created by **AIZAO Aloong**.` body line was
+          replaced by an attribution sentence that also names the license
+          and the upstream URL. The same credit is carried by this NOTICE,
+          README.zh.md, and LICENSE.upstream.
 
   docs/upstream-SKILL.md, docs/upstream-README.md,
   docs/upstream-agents-openai.yaml

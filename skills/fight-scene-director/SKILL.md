@@ -1,6 +1,6 @@
 ---
 name: fight-scene-director
-description: Design executable fight-scene prompts for AI video from text, character and scene assets, initial-position images, or trajectory maps. Use when the user wants to choreograph, revise, or control a fight, chase, duel, group battle, ranged-versus-melee encounter, spell battle, transformation, summon, or camera-and-character trajectory workflow across live action, 3D cartoon, 3D realistic anime, 2D anime, or another visual style. Outputs structured Chinese-language prompts suitable for AI video models including Seedance 2.0, Seedance 2.5, and MiniMax H3. 中文触发词：打戏、动作导演、武打设计、分镜、运镜、轨迹图、站位图、变身、召唤、群战、法术对轰。
+description: Design executable AI-video fight-scene prompts: choreography, camera, spatial continuity, effects, and trajectory maps. Use for 打戏 / 动作导演 / 武打设计 / 分镜 / 运镜 / 轨迹图 / 站位图, and for fight, chase, duel, group battle, ranged-versus-melee, spell battle, transformation, or summon scenes across live action, 3D cartoon, 3D realistic anime, and 2D anime. Outputs structured Chinese prompts for Seedance 2.0, Seedance 2.5, and MiniMax H3.
 ---
 
 # Fight Scene Director
@@ -11,12 +11,11 @@ Turn the user's characters, weapons, abilities, scene, visual references, story 
 
 ## DeepSeek Harness Notes
 
-This skill runs inside DeepSeek Harness. Two harness-specific facts:
+This skill runs inside DeepSeek Harness. Three harness-specific facts:
 
-- The reference files named below live in this skill's own directory (the harness prints `Base directory for this skill: <path>` when the skill loads). Resolve every `references/…` path against that base directory and read the file with the file-reading tool before relying on it.
-- Users invoke this skill through the harness skill mechanism instead of a `$name` prefix. You will be loaded either because the user asked for fight design in words, or because the user explicitly named `fight-scene-director`. Either way, begin at **Route the Request** below — do not ask the user how to activate the skill.
-
-Everything after this section is the upstream skill content, kept semantically unchanged.
+- Users invoke this skill by typing `/fight-scene-director` as its own word, or simply by asking for fight design in words — the harness is model-invocable, so a plain request such as “帮我设计一段 30 秒的剑客对决打戏” reaches this skill directly. Do not ask the user how to activate it.
+- The reference files named below live in this skill's own directory. The harness prints `Base directory for this skill: <path>` when the skill loads; resolve every `references/…` path against that base directory and read the file with the file-reading tool before relying on it.
+- Everything after this section is the upstream skill content, kept semantically unchanged.
 
 ## Language
 

@@ -63,38 +63,52 @@ dsh plugin --profile web add /绝对路径/dsh-fight-scene-director
 
 ## 验证安装
 
-重启后，技能必须出现在会话技能目录里：
+重启后，确认插件真的进了 profile 的 bundle 层——这一步才是「装了」和「装了但没挂载」的分界：
 
 ```bash
-dsh plugin --profile web list | grep fight-scene-director
+# 1. 依赖在
+dsh plugin --profile web list
+
+# 2. 组合出来的 profile 树里有插件的行
+dsh --profile web --dump-config | Select-String 'id: dsh-fight-scene-director' -Context 1,1
 ```
+
+第 2 步必须打印出 `id: dsh-fight-scene-director` / `name: dsh-fight-scene-director`
+的行。只有依赖、没有组合行，说明装上了但永远不会被挂载。（技能提供方自己的内部名是
+`fsd-skills`，它出现在日志里，不在 profile 树里。）
 
 在会话里直接用中文提需求即可（本技能可被模型自动召回），例如
-`帮我设计一段 30 秒的剑客对决打戏`。也可以显式加载：
+`帮我设计一段 30 秒的剑客对决打戏`。也可以显式调用，把技能名当成一个独立词打出来：
 
 ```
-skill fight-scene-director
+/fight-scene-director
 ```
 
 **如果技能没有出现**，按顺序排查：
 
-1. 确认插件是作为 *bundle 层* 落地的——只声明了依赖但包没有 `dsh.bundle` 时，
-   它会被装上但永远不会被挂载；
+1. 确认插件是作为 *bundle 层* 落地的（上面第 2 步）——只声明了依赖但包没有 `dsh.bundle`
+   时，它会被装上但永远不会被挂载；
 2. 确认你重启了 harness（profile bundle 只在启动时组合）；
-3. 确认 `package.json` 的 `dsh.bundle.patch` 指向的 `cordis.patch.yml` 存在。
+3. 确认 `package.json` 的 `dsh.bundle.patch` 指向的 `cordis.patch.yml` 存在；
+4. 在 harness 日志里找 `dsh-fight-scene-director: skipped …` 警告——没通过 frontmatter
+   契约的技能文件会被**带原因跳过**，而不是无声消失。
 
 ## 配置
 
-支持在 profile 的 `cordis.patch.yml` 或 agent preset 里行内配置：
+支持在 profile 的 `cordis.patch.yml` 或 agent preset 里行内配置，行 id 就是包名：
 
 ```yaml
-- id: fsd-skills
+- id: dsh-fight-scene-director
   name: dsh-fight-scene-director
   config:
     enableSkills: true          # 设为 false 可整体卸载本包技能
     extraSkillDirs: []          # 让同一个 provider 额外服务的技能根目录
-    maxSkills: 100              # 目录条目上限
+    maxSkills: 100              # 目录条目上限，整数且 >= 1
 ```
+
+非法取值会**直接报错**而不是被忽略：`maxSkills` 必须是 `>= 1` 的整数（填 `0` 会静默清空
+目录），`extraSkillDirs` 必须是非空字符串数组，`enableSkills` 必须是布尔值。传 `null`
+或不传表示用默认值。
 
 ## 卸载
 
@@ -103,6 +117,16 @@ dsh plugin --profile web remove dsh-fight-scene-director
 ```
 
 然后重启。移除依赖后，下一次启动会自动摘掉该 bundle 层；包外不写任何文件。
+
+三个需要知道的坑：
+
+- **同一个 profile 里不要把本插件挂载两次。** Cordis 的 loader entry id 在整棵组合树里
+  全局唯一，第二行同 id 会在**启动时**失败。行 id 之所以取包名，就是为了让唯一可能的
+  碰撞是「同一插件装两次」。
+- 从本地检出装（`link:`）之后**移动或删除那个目录**，profile 会直接起不来
+  （`cannot resolve profile bundle`）。要么先摘掉 profile 条目，要么改用 GitHub 直装。
+- `dsh plugin remove` 会移除依赖与 bundle 层，但可能留下 `node_modules` 里的链接；
+  bundle 层没了之后它是惰性的。
 
 ## 仓库结构
 

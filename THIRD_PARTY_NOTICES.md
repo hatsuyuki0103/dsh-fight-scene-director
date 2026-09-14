@@ -27,10 +27,11 @@ Redistributed files:
 | `docs/upstream-README.md` | byte-identical (reference copy for diffing) |
 | `docs/upstream-agents-openai.yaml` | byte-identical (reference copy; not an active artifact) |
 
-Byte-identity is enforced by `test/knowledge.test.mjs` (T3.4) against
-`test/fixtures/upstream-hashes.json`. If you intentionally modify a reference
-file you must update that fixture and say so in `CHANGELOG.md`; otherwise the
-test suite will fail by design.
+Byte-identity is enforced by `test/knowledge.test.mjs`: T3.4 covers the five
+`references/*.md` files against `test/fixtures/upstream-hashes.json`, and T3.6
+covers the `docs/` copies and `LICENSE.upstream`. If you intentionally modify
+any of them you must update that fixture and say so in `CHANGELOG.md`; otherwise
+the test suite fails by design.
 
 See [`NOTICE`](./NOTICE) for the full list of what was ported, what was added,
 and what was deliberately not redistributed.
@@ -40,4 +41,5 @@ and what was deliberately not redistributed.
 None. The plugin imports only Node.js built-ins (`node:fs/promises`,
 `node:path`, `node:url`) and consumes the DeepSeek Harness `skills` service
 through Cordis dependency injection. `@deepseek-ai/cordis` is declared as an
-optional peer dependency and is supplied by the harness itself.
+**optional** peer dependency (`peerDependenciesMeta`), so npm and pnpm do not
+install a duplicate copy into a consumer project; the harness supplies it.

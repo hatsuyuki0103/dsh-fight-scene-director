@@ -71,40 +71,59 @@ Add the checkout to your profile dependencies and bundle list yourself
 
 ## Verify the install
 
-After restarting, the skill must appear in your session skill catalog:
+After restarting, confirm the plugin joined the profile's bundle layers — this
+is the check that actually distinguishes "installed" from "installed and
+mounted":
 
 ```bash
-dsh plugin --profile web list | grep fight-scene-director
+# 1. the dependency is present
+dsh plugin --profile web list
+
+# 2. the composed profile tree carries the plugin's row
+dsh --profile web --dump-config | grep -B1 -A2 'id: dsh-fight-scene-director'
 ```
+
+Step 2 must print the row with `id: dsh-fight-scene-director` and
+`name: dsh-fight-scene-director`. A dependency without a composed row is
+installed but never mounted. (The skill provider's own internal name is
+`fsd-skills`; that appears in logger output, not in the profile tree.)
 
 Inside a session, ask for a fight scene in plain words — the skill is
-model-invocable, so `帮我设计一段 30 秒的剑客对决打戏` is enough. To load it
-explicitly, name it:
+model-invocable, so `帮我设计一段 30 秒的剑客对决打戏` is enough. To invoke it
+explicitly, type the skill as its own word:
 
 ```
-skill fight-scene-director
+/fight-scene-director
 ```
 
 If the skill does **not** appear:
 
-1. confirm the plugin landed as a *bundle layer* — a dependency without
-   `dsh.bundle` is installed but never mounted;
+1. confirm the plugin landed as a *bundle layer* (step 2 above) — a dependency
+   without `dsh.bundle` is installed but never mounted;
 2. confirm you restarted the harness (profile bundles compose at boot);
-3. check `package.json` → `dsh.bundle.patch` resolves to `cordis.patch.yml`.
+3. check `package.json` → `dsh.bundle.patch` resolves to `cordis.patch.yml`;
+4. look for `dsh-fight-scene-director: skipped …` warnings in the harness log —
+   a skill file that fails the frontmatter contract is skipped with a reason
+   rather than silently dropped.
 
 ## Configure
 
 The plugin accepts inline config in your profile's `cordis.patch.yml` / agent
-preset:
+preset. The row id is the package name:
 
 ```yaml
-- id: fsd-skills
+- id: dsh-fight-scene-director
   name: dsh-fight-scene-director
   config:
     enableSkills: true          # set false to unmount this package's skill
     extraSkillDirs: []          # additional skill roots served by this provider
-    maxSkills: 100              # catalog entry cap
+    maxSkills: 100              # catalog entry cap, integer >= 1
 ```
+
+Invalid values are rejected loudly rather than ignored: `maxSkills` must be an
+integer `>= 1` (`0` would silently empty the catalog), `extraSkillDirs` must be
+an array of non-empty strings, and `enableSkills` must be a boolean. `null` or a
+missing config means "use defaults".
 
 ## Uninstall
 
@@ -114,6 +133,18 @@ dsh plugin --profile web remove dsh-fight-scene-director
 
 Then restart. Removing the dependency drops the bundle layer on the next boot;
 no files are written outside the installed package.
+
+Two caveats worth knowing:
+
+- **Do not mount this plugin more than once per profile.** Cordis loader entry
+  ids are global to the composed tree, so a second row with the same id fails at
+  boot. The id is the package name precisely so that this is the only reachable
+  collision.
+- Installing from a local checkout (`link:`) then **moving or deleting that
+  directory** leaves the profile unable to boot (`cannot resolve profile
+  bundle`). Remove the profile entry first, or install from GitHub instead.
+- `dsh plugin remove` removes the dependency and the bundle layer but can leave
+  the `node_modules` link behind; it is inert once the bundle layer is gone.
 
 ## Repository layout
 

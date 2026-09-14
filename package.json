@@ -1,6 +1,6 @@
 {
   "name": "dsh-fight-scene-director",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "DeepSeek Harness 插件：把 Codex 技能 fight-scene-director（多画风 AI 视频打戏设计与轨迹图调度）移植为 DSH 原生技能，输出适配 Seedance 2.0 / Seedance 2.5 / MiniMax H3 的结构化中文提示词。",
   "type": "module",
   "main": "./index.mjs",
@@ -14,6 +14,7 @@
     "index.mjs",
     "lib",
     "skills",
+    "docs",
     "cordis.patch.yml",
     "README.md",
     "README.zh.md",
@@ -56,7 +57,7 @@
     "capability": {
       "id": "fight-scene-director",
       "kind": "skill-set",
-      "invocation": "skill fight-scene-director",
+      "invocation": "/fight-scene-director",
       "expected": "会话技能目录中出现 fight-scene-director；模型加载后按上游打戏设计流程产出结构化中文视频提示词与节奏面板"
     },
     "evidence": {
@@ -68,6 +69,11 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
   },
   "scripts": {
     "test": "node --test \"test/*.test.mjs\""

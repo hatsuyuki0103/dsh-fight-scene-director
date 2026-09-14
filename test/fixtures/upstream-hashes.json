@@ -22,5 +22,21 @@
       "sha256": "f734543986e7e7e2eb5977cb7fd73ed0a057062b8e5450c7c4d7a2a80cdca1ef",
       "bytes": 8643
     }
+  },
+  "upstreamSkillMd": {
+    "sha256": "9abcf2ffdac9b07422acb5274c388189e57824fa46ad4bca52a13d9221b51bd7",
+    "bytes": 5530
+  },
+  "upstreamReadmeMd": {
+    "sha256": "898cca5300b2b8f2fa9887160bc6150b6615e501b450660a841d26f2b3784e2d",
+    "bytes": 1729
+  },
+  "upstreamAgentsOpenaiYaml": {
+    "sha256": "f96dde734eb0c5630e2d1410f2e77d89c29c152cbc2c9a82da6dfa18606340fe",
+    "bytes": 312
+  },
+  "upstreamLicenseTxt": {
+    "sha256": "344d5727c655bd88441d9fd4d5bfa85b089706492c4e9e683a9f691071275570",
+    "bytes": 1069
   }
 }

@@ -51,7 +51,8 @@ for f in /tmp/upstream-refs/*.md; do
 done | sort -k2
 ```
 
-Windows / PowerShell 版本（不依赖 `Get-FileHash`）：
+Windows / PowerShell 版本（用 Node 处理 base64 与哈希，不依赖 `Get-FileHash`，
+也不依赖 `[IO.File]::`——在受限语言模式的沙箱里这些会被拦下）：
 
 ```powershell
 $repo = 'ZzzAloong/fight-scene-director'
@@ -64,6 +65,10 @@ foreach ($f in 'choreography-and-camera','examples','interaction-routing','outpu
 }
 node -e "const {createHash}=require('node:crypto'),fs=require('node:fs');for(const f of fs.readdirSync(process.argv[1]).sort())console.log(createHash('sha256').update(fs.readFileSync(process.argv[1]+'/'+f)).digest('hex'),f)" $dest
 ```
+
+> 如果上面的 `[IO.File]::WriteAllBytes` 被沙箱以「only core types」拒绝，把下载换成
+> `Invoke-RestMethod ... | ConvertFrom-Json` 后交给 Node 写盘，或者直接在 bash / WSL
+> 里跑前一节的命令——两条路产出的字节完全相同。
 
 ## 4. 与夹具对账
 
