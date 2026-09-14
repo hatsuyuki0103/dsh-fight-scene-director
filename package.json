@@ -1,0 +1,99 @@
+{
+  "name": "dsh-fight-scene-director",
+  "version": "1.0.0",
+  "description": "DeepSeek Harness 插件：把 Codex 技能 fight-scene-director（多画风 AI 视频打戏设计与轨迹图调度）移植为 DSH 原生技能，输出适配 Seedance 2.0 / Seedance 2.5 / MiniMax H3 的结构化中文提示词。",
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./lib/skills-provider": "./lib/skills-provider.mjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.mjs",
+    "lib",
+    "skills",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES.md",
+    "LICENSE",
+    "LICENSE.upstream"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dshWorkshop": {
+    "schema": "omdsh-workshop-package/v1",
+    "type": "plugin",
+    "integration": {
+      "protocol": "harness-profile",
+      "artifact": "cordis.patch.yml"
+    },
+    "install": {
+      "mode": "transactional",
+      "adapter": "profile-bundle",
+      "failurePolicy": "generation-rollback",
+      "touchesCurrentBeforeActivation": false
+    },
+    "lifecycle": {
+      "activation": "restart-profile",
+      "dispose": "supported"
+    },
+    "permissions": [
+      "filesystem:read"
+    ],
+    "compatibility": {
+      "dshVersions": [
+        "0.1.5-rc.1"
+      ]
+    },
+    "capability": {
+      "id": "fight-scene-director",
+      "kind": "skill-set",
+      "invocation": "skill fight-scene-director",
+      "expected": "会话技能目录中出现 fight-scene-director；模型加载后按上游打戏设计流程产出结构化中文视频提示词与节奏面板"
+    },
+    "evidence": {
+      "install": null,
+      "failureIsolation": null,
+      "hotReload": null,
+      "remove": null
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "skill",
+    "fight-scene-director",
+    "ai-video",
+    "seedance",
+    "minimax",
+    "prompt-engineering",
+    "storyboard",
+    "codex-port"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hatsuyuki0103/dsh-fight-scene-director.git"
+  },
+  "homepage": "https://github.com/hatsuyuki0103/dsh-fight-scene-director#readme",
+  "bugs": {
+    "url": "https://github.com/hatsuyuki0103/dsh-fight-scene-director/issues"
+  }
+}

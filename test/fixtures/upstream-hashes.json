@@ -1,0 +1,26 @@
+{
+  "upstream": "ZzzAloong/fight-scene-director",
+  "commit": "6265df37ae701449ef672f46db65ab15c4af9fc2",
+  "files": {
+    "choreography-and-camera.md": {
+      "sha256": "00a2955a4567382f969a1de5fd224bc30a14f298ee96a83e551658d0fafa7e9b",
+      "bytes": 14468
+    },
+    "examples.md": {
+      "sha256": "a186d5f427356f72e047597b28a94e4ae1dbedd1629084ff544756642a32db10",
+      "bytes": 10773
+    },
+    "interaction-routing.md": {
+      "sha256": "ff6564fe087ee41b9d964c07a14a44769b270e5f475f3df9236025d4e07d7995",
+      "bytes": 9509
+    },
+    "output-format.md": {
+      "sha256": "8ed2e2476fd64eee49ce011451c54bfe04fda9a3258e1e3c47709011a7a405e0",
+      "bytes": 8606
+    },
+    "trajectory-workflow.md": {
+      "sha256": "f734543986e7e7e2eb5977cb7fd73ed0a057062b8e5450c7c4d7a2a80cdca1ef",
+      "bytes": 8643
+    }
+  }
+}

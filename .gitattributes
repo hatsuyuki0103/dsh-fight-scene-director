@@ -1,0 +1,25 @@
+# Keep the working tree byte-identical to the committed blobs.
+#
+# This is load-bearing, not cosmetic: test/knowledge.test.mjs (T3.4) hashes the
+# five files under skills/fight-scene-director/references/ and asserts they are
+# byte-for-byte identical to the pinned upstream commit. The upstream files are
+# UTF-8 with LF endings, so any automatic CRLF conversion on checkout would
+# change the hashes and fail the gate on Windows.
+* text=auto eol=lf
+
+# Binary-ish assets that must never be normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.zip binary
+*.tgz binary
+
+# GitHub renders these with their own parser; keep them LF for reproducibility.
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf

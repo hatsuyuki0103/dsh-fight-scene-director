@@ -1,0 +1,7 @@
+interface:
+  display_name: "多画风打戏导演"
+  short_description: "输出适配主流AI视频模型的多画风中文打戏提示词"
+  default_prompt: "使用 $fight-scene-director 根据我的角色、场景和打斗要求设计可执行的视频提示词。"
+
+policy:
+  allow_implicit_invocation: false

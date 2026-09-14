@@ -1,0 +1,55 @@
+dsh-fight-scene-director
+Copyright (c) 2026 hatsuyuki0103
+
+This product is a DeepSeek Harness port of a third-party skill.
+================================================================
+
+Original work
+-------------
+  Title:   fight-scene-director (多画风打戏导演)
+  Author:  AIZAO Aloong
+  Source:  https://github.com/ZzzAloong/fight-scene-director
+  Commit:  6265df37ae701449ef672f46db65ab15c4af9fc2
+  License: MIT (Copyright (c) 2026 AIZAO Aloong)
+           Full text preserved verbatim in LICENSE.upstream
+
+What was ported
+---------------
+  skills/fight-scene-director/references/*.md
+      Copied byte-for-byte from the original commit above. The Chinese
+      output contract, choreography rules, trajectory workflow, routing
+      copy, examples, and the silent self-audit list are unchanged.
+
+  skills/fight-scene-director/SKILL.md
+      The original prose, headings, and rules are kept semantically
+      unchanged. Two additions were made for DeepSeek Harness:
+        - a "DeepSeek Harness Notes" section (how the skill is loaded and
+          how `references/...` paths resolve against the skill directory);
+        - a Chinese trigger vocabulary appended to the `description`
+          frontmatter field (DSH matches skills by description).
+      A stale "Created by AIZAO Aloong" body line was dropped because the
+      same credit is carried by this NOTICE, README.zh.md, and LICENSE.
+
+  docs/upstream-SKILL.md, docs/upstream-README.md,
+  docs/upstream-agents-openai.yaml
+      Verbatim copies of the upstream files, included so anyone can diff
+      this port against the original.
+
+  agents/openai.yaml
+      Not redistributed as an active artifact: it is Codex-specific
+      (display_name / short_description / default_prompt / policy) and has
+      no meaning in DeepSeek Harness. Its intent is transcribed into the
+      README usage examples and the SKILL.md harness notes.
+
+What is new in this package
+---------------------------
+  index.mjs, lib/skills-provider.mjs, cordis.patch.yml, package.json,
+  test/*, README.md, README.zh.md, CHANGELOG.md, LICENSE
+      Original work, MIT, Copyright (c) 2026 hatsuyuki0103. These files
+      implement the DeepSeek Harness plugin shell and skill provider that
+      the original Codex skill did not need.
+
+No warranty
+-----------
+Both the original work and this port are provided "AS IS", without warranty
+of any kind, as set out in the MIT License texts.

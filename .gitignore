@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# logs and caches
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.npm/
+.cache/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# local scratch
+*.tgz
+.tmp/
+tmp/

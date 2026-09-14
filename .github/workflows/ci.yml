@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: node --test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The port targets the harness runtime floor first, plus current LTS.
+        node: ['22.19.0', '24.x']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Show resolved versions
+        run: node --version
+
+      - name: Run the contract and knowledge-fidelity gates
+        run: node --test "test/*.test.mjs"
+
+  package-shape:
+    name: npm pack includes every runtime file
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+
+      # A bundle patch that resolves to a missing file installs fine and then
+      # mounts nothing, so assert the packed tarball actually carries the
+      # entry, the lib, the skill, and the patch.
+      - name: Pack and inspect
+        run: |
+          set -euo pipefail
+          npm pack --silent > /tmp/pkg.txt
+          pkg="$(cat /tmp/pkg.txt)"
+          echo "packed: $pkg"
+          tar -tzf "$pkg" > /tmp/files.txt
+          for required in \
+            package/index.mjs \
+            package/lib/skills-provider.mjs \
+            package/cordis.patch.yml \
+            package/package.json \
+            package/skills/fight-scene-director/SKILL.md \
+            package/skills/fight-scene-director/references/output-format.md \
+            package/LICENSE.upstream \
+            package/NOTICE
+          do
+            grep -qx "$required" /tmp/files.txt || { echo "MISSING: $required"; exit 1; }
+          done
+          echo "all required files present"
+
+      - name: Install the packed tarball into a clean project
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/consumer
+          cd /tmp/consumer
+          npm init -y > /dev/null
+          npm install "$GITHUB_WORKSPACE/$(cat /tmp/pkg.txt)" --silent
+          node --input-type=module -e "
+            import path from 'node:path'
+            import { apply, name, inject } from 'dsh-fight-scene-director'
+            if (typeof apply !== 'function') throw new Error('apply missing')
+            if (!inject.includes('skills')) throw new Error('skills not injected')
+            const factories = []
+            apply({ skills: { registerProvider: (f) => { factories.push(f); return () => {} } } }, {})
+            if (factories.length !== 1) throw new Error('provider not registered')
+            const provider = await factories[0]()
+            const candidates = await provider.list()
+            const names = candidates.map((c) => c.name)
+            if (names.join(',') !== 'fight-scene-director') throw new Error('unexpected catalog: ' + names)
+            const def = await provider.get(candidates[0])
+            if (!def.content.includes('## Route the Request')) throw new Error('skill body not loaded')
+            const base = def.resourceBase
+            if (base.kind !== 'directory') throw new Error('resourceBase must be a directory')
+            console.log('installed package OK:', name, '→', names[0], '@', base.path)
+          "

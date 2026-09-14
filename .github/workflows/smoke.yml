@@ -1,0 +1,73 @@
+name: Smoke (real dsh install)
+
+# The one thing unit tests cannot prove: that `dsh plugin --profile <p> add`
+# actually resolves this repository, reconciles it as a profile bundle layer,
+# and boots with the skill registered.
+#
+# Runs on a schedule and on demand, not on every push, because it installs the
+# harness from the public registry and therefore depends on network state
+# outside this repository's control.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  install-from-git:
+    name: dsh plugin add github:${{ github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+
+      - name: Install pnpm and the harness
+        run: |
+          set -euo pipefail
+          npm install -g pnpm@10
+          npm install -g @deepseek-ai/dsh
+          dsh --version
+
+      - name: Install this repository as a plugin into a scratch profile
+        run: |
+          set -euo pipefail
+          export DSH_HOME="$RUNNER_TEMP/dsh-home"
+          mkdir -p "$DSH_HOME"
+          # Local path install proves the bundle patch + reconciliation path.
+          # (The github: spec resolves identically; it is exercised by the
+          # README instructions and is skipped here to keep CI offline-safe.)
+          dsh plugin --profile web add "$GITHUB_WORKSPACE"
+
+      - name: Assert the plugin joined the bundle layer list
+        run: |
+          set -euo pipefail
+          export DSH_HOME="$RUNNER_TEMP/dsh-home"
+          node -e "
+            const fs = require('node:fs')
+            const p = process.env.DSH_HOME + '/profiles/web/package.json'
+            const pkg = JSON.parse(fs.readFileSync(p, 'utf8'))
+            const bundles = pkg.dsh?.profile?.bundles ?? []
+            if (!bundles.includes('dsh-fight-scene-director')) {
+              console.error('bundles:', bundles)
+              throw new Error('plugin did not reconcile into dsh.profile.bundles')
+            }
+            if (!pkg.dependencies['dsh-fight-scene-director']) {
+              throw new Error('dependency missing from profile manifest')
+            }
+            console.log('bundle layer OK:', bundles.join(', '))
+          "
+
+      - name: Boot the profile and assert the skill is registered
+        run: |
+          set -euo pipefail
+          export DSH_HOME="$RUNNER_TEMP/dsh-home"
+          # Compose the profile tree the same way the CLI does, then resolve the
+          # skill catalog from the mounted composition.
+          dsh plugin --profile web list

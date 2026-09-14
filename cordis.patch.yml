@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: MIT
+# dsh-fight-scene-director bundle patch: mount the fight-scene-director host plugin.
+- insert:
+    - id: fsd-skills
+      name: dsh-fight-scene-director
