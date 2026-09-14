@@ -29,10 +29,10 @@ dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director
 ```
 
 `dsh plugin add` 底层就是 `pnpm add`，而 pnpm 支持 `github:user/repo` 这种写法，
-所以**不需要 npm 账号，也不需要包已发布到 npm**。需要可复现时钉版本：
+所以**不需要 npm 账号，也不需要包已发布到 npm**。需要可复现时在末尾加 `#<tag>` 钉版本：
 
 ```bash
-dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director#v1.0.0
+dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director#v1.1.2
 ```
 
 安装后**重启 harness**，让新的 profile 层被组合进去。
@@ -42,7 +42,7 @@ dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director#v1.0.
 每个 release 都附带了打包产物，pnpm 可以直接装：
 
 ```bash
-dsh plugin --profile web add https://github.com/hatsuyuki0103/dsh-fight-scene-director/releases/download/v1.1.0/dsh-fight-scene-director-1.1.0.tgz
+dsh plugin --profile web add https://github.com/hatsuyuki0103/dsh-fight-scene-director/releases/download/v1.1.2/dsh-fight-scene-director-1.1.2.tgz
 ```
 
 适用于两种情况：你的网络对 GitHub 的 git-over-HTTPS 不通；或者你想要一个按字节钉定的
@@ -105,6 +105,15 @@ grep -B1 -A2 'id: dsh-fight-scene-director' tree.yml                 # macOS / L
 3. 确认 `package.json` 的 `dsh.bundle.patch` 指向的 `cordis.patch.yml` 存在；
 4. 在 harness 日志里找 `dsh-fight-scene-director: skipped …` 警告——没通过 frontmatter
    契约的技能文件会被**带原因跳过**，而不是无声消失。
+
+### 新增或修改技能需要重启
+
+技能注册表会缓存收集到的目录，而提供方只能在「注册表已经发起的那次调用内部」请求重新收集。因此：
+
+- **修改或删除**已加载的技能文件会被自动发现——下一次加载会注意到文件变了、丢掉陈旧条目，
+  并请注册表重新收集；
+- **新增**一个技能文件（包括通过 `extraSkillDirs`）**必须重启 harness** 才会出现。
+  本提供方没有文件监听器，只在注册表要求时才读目录。
 
 ## 配置
 

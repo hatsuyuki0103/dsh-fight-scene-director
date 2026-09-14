@@ -4,6 +4,82 @@ All notable changes to this package are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] — 2026-09-14
+
+Third review round. The headline defect is in candidate identity — the same area
+that produced a defect in each of the two previous rounds, so this release also
+adds a structural invariant test rather than another one-off fix.
+
+### Fixed
+
+- **A skill that received a `-2`/`-3` collision suffix could never be loaded.**
+  `list()` stored the disambiguated name (`collide-2`) as `assignedName`, while
+  `get()` compared it against the name normalized from the file (`collide`) —
+  which can never be equal, because the suffix exists only in the allocation
+  result and never on disk. The suffixed skill was therefore advertised in the
+  catalogue but every load returned `undefined` and asked the registry to
+  re-collect, which cleared the whole collect cache each time. The registry then
+  surfaced `skill "collide-2" is unknown or no longer available`. The record now
+  keeps the base name separate from the assigned name; `get()` compares the base
+  name and returns the assigned name, which is also what the registry requires
+  (`definition.name === candidate.name`). Gated by T2.22 and by the new
+  invariant helper.
+- **The invariant is now tested, not just the individual cases.**
+  `assertIdentityInvariant()` asserts that *every* candidate `list()` returns can
+  be loaded by `get()` and comes back under the same name, with the same path and
+  a directory `resourceBase`. Identity handling has now failed three rounds
+  running; a single invariant catches all three shapes at once. Applied to the
+  collision root (T2.22) and after a drift event (T2.23).
+- **The `drifted` branch of `get()` was entirely ungated.** Mutations that made
+  drift detection always false, or that dropped the name comparison, left the
+  suite green. T2.23 now edits the file with no intervening `list()` and asserts
+  that `get()` rejects the stale candidate, requests invalidation, and that the
+  catalogue is self-consistent afterwards.
+- **`frontmatterBoolean` failed open where the official provider throws.** A
+  typo such as `disable-model-invocation: maybe` was treated as "not specified",
+  so a skill whose author meant to opt out of model invocation was advertised as
+  model-invocable — a silent failure in the unsafe direction. Unrecognised values
+  now raise the same error the official provider raises. Gated by T2.8h and
+  T2.26.
+- **The legacy camelCase key rejection had a silent bypass.** The key pattern only
+  matched bare column-0 keys, so `"userInvocable": false` was invisible: real
+  YAML would surface that key and the official provider would reject the file,
+  while this provider published it permissively with no diagnostic. Quoted keys
+  are now parsed and rejected too. Gated by T2.27.
+- **Malformed block-scalar headers were published as descriptions.**
+  `|--`, `|+2-`, `|2-9`, `>"`, `|'`, `| -` and `|#x` all returned the literal
+  text, while a real YAML parser rejects every one of them. The check is now
+  "any non-quoted scalar starting with `|` or `>` is a block header", not a
+  whitelist of well-formed spellings. This also retires an assertion in T2.8f
+  that had been locking the leak in. Gated by T2.24.
+- **A quoted scalar followed by a comment containing a quote was corrupted.**
+  `unquote()` located the closing quote with `lastIndexOf`, so
+  `"a" # "b"` yielded `a" # "b` instead of `a`. It now takes the first quote that
+  actually closes the scalar. Gated by T2.25.
+- **The READMEs pinned stale versions.** The `github:` example pinned `#v1.0.0`
+  and the tarball example pointed at `v1.1.0`, both while HEAD was 1.1.1 — so a
+  copy-pasted install fetched a build with the defects fixed in 1.1.0 and 1.1.1.
+  Both now pin the current release, and T4.6 asserts that every tag, release URL
+  and asset name in either README equals `package.json`'s version.
+- **The restart boundary was claimed but not documented.** 1.1.1's changelog and
+  a code comment both said the README explains that a newly added skill needs a
+  restart; neither README said any such thing. Both now have an explicit "Adding
+  or changing skills needs a restart" section, gated by T4.7.
+
+### Changed
+
+- `lib/skills-provider.mjs` records `baseName` alongside `assignedName` in its
+  per-path state, and `get()` returns `prev.assignedName`.
+
+### Verification
+
+- `node --test "test/*.test.mjs"` — 76 gates, all passing.
+- 12 targeted mutations of the 1.1.2 fixes, including "drift detection always
+  false", "name not compared", and each new reader: **12/12 caught**.
+- Packed artifact reinstalled and exercised end to end (rank 600, 426-character
+  description, 5/5 references resolving under `resourceBase`, forged candidate
+  refused, suffixed candidate now loadable).
+
 ## [1.1.1] — 2026-09-14
 
 Follow-up from a second, mutation-driven review of 1.1.0. Two things were

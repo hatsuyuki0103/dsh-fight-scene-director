@@ -108,6 +108,40 @@ test('T4.5 smoke.yml 的合成树断言必须匹配真实行 id（拒绝 fsd-ski
   assert.ok(/leaked into a patch row id/.test(yml), '应保留对内部名泄漏的反向断言')
 })
 
+test('T4.6 README 里钉的版本必须等于包版本（防止文档滞后）', async () => {
+  // 回归：文档里的 #tag 与 tarball 链接停留在旧版本，用户照抄就装到带已知缺陷的构建。
+  const pkg = JSON.parse(await readText(path.join(ROOT, 'package.json')))
+  const version = pkg.version
+  for (const rel of ['README.md', 'README.zh.md']) {
+    const text = await readText(path.join(ROOT, rel))
+    const tags = [...text.matchAll(/#v(\d+\.\d+\.\d+)\b/g)].map((m) => m[1])
+    assert.ok(tags.length > 0, `${rel} 应当给出一个钉版本的安装示例`)
+    for (const tag of tags) {
+      assert.equal(tag, version, `${rel} 钉的是 v${tag}，包版本是 ${version}`)
+    }
+    const tarballs = [...text.matchAll(/releases\/download\/v(\d+\.\d+\.\d+)\//g)].map((m) => m[1])
+    for (const tarball of tarballs) {
+      assert.equal(tarball, version, `${rel} 的 tarball 链接指向 v${tarball}，包版本是 ${version}`)
+    }
+    const assetNames = [...text.matchAll(/dsh-fight-scene-director-(\d+\.\d+\.\d+)\.tgz/g)].map((m) => m[1])
+    for (const asset of assetNames) {
+      assert.equal(asset, version, `${rel} 的 asset 名是 ${asset}，包版本是 ${version}`)
+    }
+  }
+})
+
+test('T4.7 README 必须写明「新增技能需要重启」这一真实边界', async () => {
+  // 回归：CHANGELOG 与代码注释都声称 README 写了这条限制，实际两个 README 都没写。
+  for (const rel of ['README.md', 'README.zh.md']) {
+    const text = await readText(path.join(ROOT, rel))
+    assert.match(
+      text,
+      /Adding or changing skills needs a restart|新增或修改技能需要重启/,
+      `${rel} 必须说明新增技能需要重启（这是注册表缓存导致的真实边界）`,
+    )
+  }
+})
+
 test('T5.1 apply(ctx) 注册了恰好一个 provider 工厂，且产物形状正确', async () => {
   const { ctx, factories } = makeFakeCtx()
   apply(ctx, {})

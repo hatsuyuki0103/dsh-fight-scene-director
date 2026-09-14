@@ -36,10 +36,10 @@ dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director
 
 `dsh plugin add` forwards to `pnpm add`, and pnpm understands the
 `github:user/repo` spec — **no npm account or published package is required.**
-Pin a revision when you want reproducibility:
+Append `#<tag>` to pin a revision for reproducibility:
 
 ```bash
-dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director#v1.0.0
+dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director#v1.1.2
 ```
 
 Then restart the harness so the new profile layer is composed.
@@ -49,7 +49,7 @@ Then restart the harness so the new profile layer is composed.
 Every release attaches the packed artifact, which pnpm installs directly:
 
 ```bash
-dsh plugin --profile web add https://github.com/hatsuyuki0103/dsh-fight-scene-director/releases/download/v1.1.0/dsh-fight-scene-director-1.1.0.tgz
+dsh plugin --profile web add https://github.com/hatsuyuki0103/dsh-fight-scene-director/releases/download/v1.1.2/dsh-fight-scene-director-1.1.2.tgz
 ```
 
 Use this when git-over-HTTPS is blocked on your network, or when you want a
@@ -118,6 +118,18 @@ If the skill does **not** appear:
 4. look for `dsh-fight-scene-director: skipped …` warnings in the harness log —
    a skill file that fails the frontmatter contract is skipped with a reason
    rather than silently dropped.
+
+### Adding or changing skills needs a restart
+
+The skill registry caches the collected catalogue, and the provider can only ask
+for a re-collection from *inside* a call the registry has already made. So:
+
+- **Editing or removing** the bundled skill while a session is live is picked up
+  automatically — the next load notices the file changed, drops the stale entry,
+  and asks the registry to re-collect.
+- **Adding a brand-new skill file** (including via `extraSkillDirs`) does **not**
+  appear until you restart the harness. There is no filesystem watcher in this
+  provider; it reads the directory only when the registry asks it to.
 
 ## Configure
 

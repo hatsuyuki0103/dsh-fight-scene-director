@@ -215,8 +215,10 @@ test('T2.8f 块标量必须先剥注释再判定，且两种指示符顺序都�
   for (const bad of ['>-', '|', '|-', '|+', '>+', '|2-', '>2+', '|2', '>2', '|-2', '>+2']) {
     assert.equal(normalizeDescription(bad), undefined, `块标量漏网: ${JSON.stringify(bad)}`)
   }
-  // 正常文本不受影响
-  assert.equal(normalizeDescription('>not a block scalar'), '>not a block scalar')
+  // 正常文本不受影响；但以非引号的 | 或 > 开头一律按块标量头拒绝
+  assert.equal(normalizeDescription('>not a block scalar'), undefined, '非引号 > 开头即块标量头，必须拒绝')
+  assert.equal(normalizeDescription('|not a block scalar'), undefined)
+  assert.equal(normalizeDescription('">- is text in quotes"'), '>- is text in quotes')
   assert.equal(normalizeDescription('-'), '-')
   assert.equal(normalizeDescription(''), undefined)
   assert.equal(normalizeDescription('   '), undefined)
@@ -232,7 +234,7 @@ test('T2.8g name 里的行尾注释不得混进技能名', () => {
   assert.equal(raw.description, 'ok enough text here')
 })
 
-test('T2.8h frontmatterBoolan / invocation 策略与官方语义一致', () => {
+test('T2.8h frontmatterBoolean / invocation 策略与官方语义一致', () => {
   assert.equal(frontmatterBoolean('true'), true)
   assert.equal(frontmatterBoolean('yes'), true)
   assert.equal(frontmatterBoolean('on'), true)
@@ -242,7 +244,10 @@ test('T2.8h frontmatterBoolan / invocation 策略与官方语义一致', () => {
   assert.equal(frontmatterBoolean('off'), false)
   assert.equal(frontmatterBoolean('0'), false)
   assert.equal(frontmatterBoolean(undefined), undefined)
-  assert.equal(frontmatterBoolean('maybe'), undefined)
+  assert.equal(frontmatterBoolean(''), undefined)
+  // 无效值必须抛错（与官方一致），不能按「没写」放行
+  assert.throws(() => frontmatterBoolean('maybe'), /must be a boolean/)
+  assert.throws(() => frontmatterBoolean('2'), /must be a boolean/)
 
   assert.deepEqual(parseInvocationPolicy({}), { modelInvocable: true, userInvocable: true })
   assert.deepEqual(parseInvocationPolicy({ 'disable-model-invocation': 'true' }), {
@@ -257,6 +262,8 @@ test('T2.8h frontmatterBoolan / invocation 策略与官方语义一致', () => {
   for (const legacy of ['disableModelInvocation', 'modelInvocable', 'userInvocable']) {
     assert.throws(() => parseInvocationPolicy({ [legacy]: 'true' }), /unsupported/, `${legacy} 应被拒绝`)
   }
+  // 无效布尔值同样必须抛错
+  assert.throws(() => parseInvocationPolicy({ 'user-invocable': 'maybe' }), /must be a boolean/)
 })
 
 test('T2.8i invocation 策略真的落到候选与定义上', async () => {
@@ -583,6 +590,150 @@ test('T2.18b 排序发生在分配之前（readdir 顺序无关的可移植门�
     const namesFrom = async (target) =>
       (await makeEmbeddedSkillsProvider({ roots: [target] }).list()).map((c) => c.name)
     assert.deepEqual(await namesFrom(dir), await namesFrom(dir))
+  } finally {
+    await cleanup()
+  }
+})
+
+/**
+ * 通用不变式：**list() 给出的每个候选都必须能被 get() 接受，且返回同名定义**。
+ *
+ * 这一条不是为某个具体 bug 写的，而是因为「候选身份处理」连续三轮各出过一次问题
+ * （1.1.0 回显 name/description → 1.1.1 回显 resourceBase → 1.1.2 用带后缀的
+ * assignedName 去比文件里的 baseName）。任何身份逻辑写错都会破坏这条不变式，
+ * 所以把它固化成断言，比逐个补洞更能防复发。
+ * @param provider - 要检查的提供方。
+ * @param label - 失败信息里的场景标签。
+ */
+async function assertIdentityInvariant(provider, label) {
+  const candidates = await provider.list()
+  assert.ok(candidates.length > 0, `${label}: list() 不应为空`)
+  for (const candidate of candidates) {
+    const def = await provider.get(candidate)
+    assert.ok(def, `${label}: 候选 "${candidate.name}" 出现在目录里却加载不出来`)
+    assert.equal(
+      def.name,
+      candidate.name,
+      `${label}: get() 返回的名字必须与候选名一致（注册表会校验 definition.name === candidate.name）`,
+    )
+    assert.equal(def.path, candidate.locator.path)
+    assert.equal(def.resourceBase.kind, 'directory')
+    assert.equal(def.resourceBase.path, path.dirname(candidate.locator.path))
+  }
+  return candidates
+}
+
+test('T2.22 不变式：目录里的每个候选都必须能加载（含 -2 后缀的）', async () => {
+  const { dir, cleanup } = await makeTempSkillRoot()
+  try {
+    // 两个技能归一化到同一 basename → 第二个拿到 -2 后缀。
+    // 回归：get() 曾拿带后缀的 assignedName 去比文件里的 baseName，永远不相等，
+    // 于是带后缀的技能被永久判为「漂移」——目录里有，get() 永远 undefined，
+    // 而且每次尝试都会白白让注册表清一次 collect 缓存。
+    await writeSkill(dir, 'aaa', skillDoc('collide', 'A'.repeat(50)))
+    await writeSkill(dir, 'zzz', skillDoc('Collide!!', 'Z'.repeat(50)))
+    const provider = makeEmbeddedSkillsProvider({ roots: [dir] })
+    const candidates = await assertIdentityInvariant(provider, 'collision root')
+    assert.deepEqual(candidates.map((c) => c.name), ['collide', 'collide-2'])
+
+    // 加载带后缀的那个不得产生任何虚假失效
+    let invalidations = 0
+    const observed = makeEmbeddedSkillsProvider({ roots: [dir], invalidate: () => { invalidations += 1 } })
+    const listed = await observed.list()
+    const before = invalidations
+    for (const c of listed) {
+      assert.ok(await observed.get(c), `观察实例里 ${c.name} 也应当可加载`)
+    }
+    assert.equal(invalidations, before, '加载未变化的技能不得触发失效')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('T2.23 drifted 分支必须有门禁（get() 在 list() 之外发现改动）', async () => {
+  // 回归：drifted 分支整段没有门禁——把 dryift 恒置为 false、或去掉名字比较，
+  // 测试依然全绿。这里刻意**不**调用 list()，直接在 get() 时改盘上的文件，
+  // 逼 get() 自己发现漂移。
+  const { dir, cleanup } = await makeTempSkillRoot()
+  try {
+    await writeSkill(dir, 'drifting', skillDoc('drifting', 'A'.repeat(50)))
+    let invalidations = 0
+    const provider = makeEmbeddedSkillsProvider({ roots: [dir], invalidate: () => { invalidations += 1 } })
+    const [candidate] = await provider.list()
+    assert.ok(await provider.get(candidate))
+
+    // 1) 只改描述，中间不调用 list()
+    await writeSkill(dir, 'drifting', skillDoc('drifting', 'B'.repeat(50)))
+    const beforeDesc = invalidations
+    assert.equal(await provider.get(candidate), undefined, '描述变了，旧候选必须被判为漂移')
+    assert.ok(invalidations > beforeDesc, '漂移必须触发 invalidate()')
+
+    // 2) 改名，中间不调用 list()
+    const [fresh] = await provider.list()
+    await writeSkill(dir, 'drifting', skillDoc('renamed-entirely', 'B'.repeat(50)))
+    const beforeName = invalidations
+    assert.equal(await provider.get(fresh), undefined, '名字变了，旧候选必须被判为漂移')
+    assert.ok(invalidations > beforeName)
+
+    // 3) 一轮 list() 之后目录与加载必须重新自洽
+    await assertIdentityInvariant(provider, 'after drift')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('T2.24 畸形块标量头一律拒绝（不再是「合法拼写白名单」）', () => {
+  // 回归：只匹配合法指示符拼写会漏掉 `|--`、`|+2-`、`|2-9`、`|'`、`| -`、`|#x`，
+  // 把字面量当描述发布出去。非引号且以 | 或 > 开头的一律算块标量头。
+  for (const bad of ['|--', '|+2-', '|2-9', ">'", "|'", '| -', '|#x', '>#x', '>', '|', '|-', '>-', '|2-', '|-2', '>2+']) {
+    assert.equal(normalizeDescription(bad), undefined, `畸形块标量头漏网: ${JSON.stringify(bad)}`)
+  }
+  // 引号包裹的不受影响（引号内的 > 是内容）
+  assert.equal(normalizeDescription('">- is a block indicator"'), '>- is a block indicator')
+  assert.equal(normalizeDescription('"|pipe"'), '|pipe')
+})
+
+test('T2.25 引号标量后面的注释里含引号也不能污染取值', () => {
+  // 回归：unquote 用 lastIndexOf 找闭合引号，注释里的引号会把它带偏
+  assert.equal(normalizeDescription('"a" # "b"'), 'a')
+  assert.equal(normalizeDescription("'a' # it's b"), 'a')
+  assert.equal(normalizeDescription('"quoted # not a comment"'), 'quoted # not a comment')
+})
+
+test('T2.26 布尔字段写错必须报错，不能按「没写」放行', () => {
+  // 回归：frontmatterBoolean 对无效值返回 undefined，等于把
+  // `disable-model-invocation: maybe` 当成没写——错在危险的方向（强行推销技能）。
+  assert.throws(() => frontmatterBoolean('maybe', 'disable-model-invocation'), /must be a boolean/)
+  assert.throws(() => frontmatterBoolean('ture', 'user-invocable'), /must be a boolean/)
+  assert.throws(() => frontmatterBoolean('2', 'user-invocable'), /must be a boolean/)
+  assert.equal(frontmatterBoolean(undefined), undefined)
+  assert.equal(frontmatterBoolean('  '), undefined)
+  assert.equal(frontmatterBoolean('TRUE'), true)
+  assert.equal(frontmatterBoolean('Off'), false)
+})
+
+test('T2.27 引号包裹的旧驼峰键也必须被拒绝（不能形成静默绕过）', async () => {
+  const { dir, cleanup } = await makeTempSkillRoot()
+  try {
+    await writeSkill(dir, 'quoted', skillDoc('quoted', 'Q'.repeat(50)))
+    for (const [slug, key] of [
+      ['dq', '"userInvocable"'],
+      ['sq', "'userInvocable'"],
+      ['dq-disable', '"disableModelInvocation"'],
+    ]) {
+      await writeSkill(dir, slug, `---\nname: ${slug}\ndescription: ${'X'.repeat(50)}\n${key}: false\n---\n\nbody\n`)
+    }
+    const skipped = []
+    const names = (
+      await makeEmbeddedSkillsProvider({ roots: [dir], onSkip: (f, r) => skipped.push(`${path.basename(path.dirname(f))}:${r}`) }).list()
+    ).map((c) => c.name)
+    assert.deepEqual(names, ['quoted'], `引号旧键不得进目录: ${names.join(', ')}`)
+    for (const slug of ['dq', 'sq', 'dq-disable']) {
+      assert.ok(
+        skipped.some((s) => s.startsWith(slug + ':') && s.includes('unsupported')),
+        `${slug} 未被诊断为旧键: ${skipped.join(' | ')}`,
+      )
+    }
   } finally {
     await cleanup()
   }
