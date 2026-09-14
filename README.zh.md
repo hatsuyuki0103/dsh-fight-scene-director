@@ -37,6 +37,17 @@ dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director#v1.0.
 
 安装后**重启 harness**，让新的 profile 层被组合进去。
 
+### 方式 A2：预构建 tarball（不需要 git，也没有构建步骤）
+
+每个 release 都附带了打包产物，pnpm 可以直接装：
+
+```bash
+dsh plugin --profile web add https://github.com/hatsuyuki0103/dsh-fight-scene-director/releases/download/v1.1.0/dsh-fight-scene-director-1.1.0.tgz
+```
+
+适用于两种情况：你的网络对 GitHub 的 git-over-HTTPS 不通；或者你想要一个按字节钉定的
+产物，而不是跟分支走。
+
 ### 方式 B：从本地检出安装
 
 ```bash

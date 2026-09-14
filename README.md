@@ -44,6 +44,17 @@ dsh plugin --profile web add github:hatsuyuki0103/dsh-fight-scene-director#v1.0.
 
 Then restart the harness so the new profile layer is composed.
 
+### Option A2 — prebuilt tarball (no git, no build step)
+
+Every release attaches the packed artifact, which pnpm installs directly:
+
+```bash
+dsh plugin --profile web add https://github.com/hatsuyuki0103/dsh-fight-scene-director/releases/download/v1.1.0/dsh-fight-scene-director-1.1.0.tgz
+```
+
+Use this when git-over-HTTPS is blocked on your network, or when you want a
+byte-pinned artifact rather than a branch.
+
 ### Option B — from a local checkout
 
 ```bash
